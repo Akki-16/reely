@@ -1,0 +1,19 @@
+# dependencies and environments
+.venv/
+frontend/node_modules/
+# build output
+build/dist/
+build/work/
+build/release/
+frontend/dist/
+frontend/src-tauri/target/
+# local data and state (never commit clinic data, databases or keys)
+*.sqlite
+*.sqlite-*
+*.key
+.DS_Store
+__pycache__/
+*.pyc
+build/bin/
+build/vendor/
+*.log
