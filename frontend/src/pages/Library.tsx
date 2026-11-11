@@ -4,8 +4,6 @@ import { ClinicPicker, SpecialityPicker, Toolbar, Ui } from '../App'
 import { api, fmt, isTauri, lrColor, url } from '../api'
 import { I } from '../icons'
 
-type Tab = 'best' | 'saved'
-
 async function copyText(t: string) {
   try { await navigator.clipboard.writeText(t) } catch {
     const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove()
@@ -14,27 +12,17 @@ async function copyText(t: string) {
 
 export default function Library() {
   const { spec, toast } = useContext(Ui)
-  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('reely.lib.tab') as Tab) || 'best')
   const [clinic, setClinic] = useState('')
   const [hookType, setHookType] = useState('')
   const [format, setFormat] = useState('')
   const [q, setQ] = useState('')
-  const [best, setBest] = useState<{ hooks: any[]; facets: Record<string, string[]> } | null>(null)
   const [saved, setSaved] = useState<any[] | null>(null)
 
-  useEffect(() => { localStorage.setItem('reely.lib.tab', tab) }, [tab])
   const loadSaved = () => api.library().then(setSaved).catch(() => setSaved([]))
   useEffect(() => { loadSaved() }, [])
-  useEffect(() => {
-    const p: Record<string, string> = { limit: '300' }
-    if (spec) p.speciality = spec
-    if (clinic) p.clinic = clinic
-    if (hookType) p.hook_type = hookType
-    if (format) p.format = format
-    if (q) p.q = q
-    api.hooks(p).then(setBest).catch(() => setBest({ hooks: [], facets: {} }))
-  }, [spec, clinic, hookType, format, q])
   useEffect(() => { setClinic('') }, [spec])
+  // filter choices come from what is saved, not from every reel
+  const facet = (k: string) => [...new Set((saved || []).map(r => r[k]).filter(Boolean))].sort() as string[]
 
   const savedSet = useMemo(() => new Set((saved || []).map(s => s.shortcode)), [saved])
   const toggle = async (code: string) => {
@@ -49,7 +37,7 @@ export default function Library() {
   const filterSaved = (rows: any[]) => rows.filter(r =>
     (!spec || r.speciality === spec) && (!clinic || r.clinic === clinic) && (!hookType || r.hook_type === hookType) && (!format || r.format === format)
     && (!q || `${r.hook_en} ${r.hook_original} ${r.summary} ${r.lib_note}`.toLowerCase().includes(q.toLowerCase())))
-  const rows = tab === 'best' ? (best?.hooks || []) : filterSaved(saved || [])
+  const rows = filterSaved(saved || []).sort((a, b) => (b.like_rate ?? -1) - (a.like_rate ?? -1))
   const exportAs = async (f: 'csv' | 'md') => {
     if (isTauri) { const r = await api.libraryExportSave(f); toast(`Saved ${r.path.split('/').pop()} to Downloads`) }
     else window.open(url(`/api/library/export?fmt=${f}`), '_blank')
@@ -64,34 +52,30 @@ export default function Library() {
       <Toolbar title="Hook library">
         <SpecialityPicker />
         <ClinicPicker value={clinic} onChange={setClinic} allValue="" />
-        <div className="field"><select value={hookType} onChange={e => setHookType(e.target.value)} aria-label="Hook type"><option value="">Any hook type</option>{(best?.facets.hook_type || []).map(v => <option key={v} value={v}>{v}</option>)}</select></div>
-        <div className="field"><select value={format} onChange={e => setFormat(e.target.value)} aria-label="Format"><option value="">Any format</option>{(best?.facets.format || []).map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div className="field"><select value={hookType} onChange={e => setHookType(e.target.value)} aria-label="Hook type"><option value="">Any hook type</option>{facet('hook_type').map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div className="field"><select value={format} onChange={e => setFormat(e.target.value)} aria-label="Format"><option value="">Any format</option>{facet('format').map(v => <option key={v} value={v}>{v}</option>)}</select></div>
         <div className="field" style={{ width: 180 }}>{I.search()}<input placeholder="Search hooks and notes" value={q} onChange={e => setQ(e.target.value)} /></div>
       </Toolbar>
       <div className="main"><div className="main-inner">
         <div>
           <h1 className="large">Hook library</h1>
-          <div className="lead">The openings that earned real engagement, ranked by like-rate across {spec ? `${spec} clinics` : 'every clinic'}. Star the ones worth adapting; they collect in Saved.</div>
+          <div className="lead">Your swipe file: hooks you chose to keep, ranked by like-rate. Nothing lands here unless you send it.</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="seg">
-            <button className={tab === 'best' ? 'on' : ''} onClick={() => setTab('best')}>Best hooks</button>
-            <button className={tab === 'saved' ? 'on' : ''} onClick={() => setTab('saved')}>Saved{saved ? ` · ${saved.length}` : ''}</button>
-          </div>
-          <span className="caption">{rows.length} shown</span>
+          <b style={{ fontSize: 15 }}>Saved{saved ? ` · ${saved.length}` : ''}</b>
+          {saved && rows.length !== saved.length && <span className="caption">{rows.length} match the filters</span>}
           <span className="spacer" />
-          {rows.length > 0 && <button className="btn plain sm" onClick={copyAll}>{I.copy()} Copy {tab === 'saved' ? 'saved' : 'shown'}</button>}
-          {tab === 'saved' && (saved?.length || 0) > 0 && <>
+          {rows.length > 0 && <button className="btn plain sm" onClick={copyAll}>{I.copy()} Copy all</button>}
+          {(saved?.length || 0) > 0 && <>
             <button className="btn plain sm" onClick={() => exportAs('md')}>{I.download()} Markdown</button>
             <button className="btn plain sm" onClick={() => exportAs('csv')}>{I.download()} CSV</button>
           </>}
         </div>
         <div className="group">
-          {tab === 'best' && !best && <div className="empty">Loading…</div>}
-          {rows.length === 0 && (tab === 'saved'
-            ? <div className="empty">Nothing saved yet. Star a hook here, or send reels from the Reels page: tick several, use the button on the reel card, or double-click a row in the table.</div>
-            : best && <div className="empty">No annotated hooks match these filters.</div>)}
-          {rows.map(r => <HookRow key={r.shortcode} r={r} saved={savedSet.has(r.shortcode)} onToggle={() => toggle(r.shortcode)} showNote={tab === 'saved'} onNote={n => api.libraryNote(r.shortcode, n).then(loadSaved)} />)}
+          {!saved && <div className="empty">Loading…</div>}
+          {saved && saved.length === 0 && <div className="empty">Nothing saved yet. Send reels from the Reels page: tick several in the list, use the button on the reel card, or double-click a row in the table.</div>}
+          {saved && saved.length > 0 && rows.length === 0 && <div className="empty">No saved hooks match these filters.</div>}
+          {rows.map(r => <HookRow key={r.shortcode} r={r} saved={savedSet.has(r.shortcode)} onToggle={() => toggle(r.shortcode)} showNote onNote={n => api.libraryNote(r.shortcode, n).then(loadSaved)} />)}
         </div>
       </div></div>
     </>

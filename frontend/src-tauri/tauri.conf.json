@@ -42,7 +42,8 @@
       "icons/icon.icns"
     ],
     "resources": {
-      "../../build/dist/reely-backend": "backend/reely-backend"
+      "../../build/dist/reely-backend": "backend/reely-backend",
+      "../../build/dist-view/reely-backend": "backend/reely-backend-view"
     },
     "macOS": {
       "minimumSystemVersion": "13.0"

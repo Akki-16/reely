@@ -23,6 +23,18 @@ app = FastAPI(title="Reely")
 
 # The Tauri shell loads the UI from its own origin and calls this API on localhost.
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from config import VIEW_ONLY, VIEW_ONLY_MSG  # noqa: E402
+
+# Work that needs the scraping browser, yt-dlp or a speech model; refused by the view-only (Intel) build.
+_WORK = re.compile(r"^/api/(clinics(/[^/]+/(run|more|retry|refresh|translate))?|queue|reels/[^/]+/(download|translate)"
+                   r"|models/[^/]+/download|browser/(login|install))$")
+
+
+@app.middleware("http")
+async def _view_only_guard(request, call_next):
+    if VIEW_ONLY and request.method == "POST" and _WORK.match(request.url.path):
+        return JSONResponse({"detail": VIEW_ONLY_MSG}, status_code=409)
+    return await call_next(request)
 app.add_middleware(CORSMiddleware,
                    allow_origins=["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:5173"],
                    allow_methods=["*"], allow_headers=["*"])
@@ -891,7 +903,7 @@ def model_delete(model_id: str):
 
 @app.get("/api/tools")
 def tools():
-    return {"claude": claude_cli.status(),
+    return {"view_only": VIEW_ONLY, "claude": claude_cli.status(),
             "browser": {"profile": str(scrape.BROWSER_PROFILE), "exists": scrape.BROWSER_PROFILE.exists(),
                         "installed": scrape.browsers_installed(), "browsers_path": str(scrape.BROWSERS_PATH)},
             "data_root": str(DATA_ROOT), "free_bytes": shutil.disk_usage(DATA_ROOT).free}

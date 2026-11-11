@@ -7,6 +7,7 @@ import { I } from '../icons'
 import { ExportSheet, ImportSheet, Sheet } from './Transfer'
 
 export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
+  const { viewOnly } = useContext(Ui)
   const { spec, specialities, refreshClinics } = useContext(Ui)
   const [data, setData] = useState<any>(null)
   const [handle, setHandle] = useState('')
@@ -54,8 +55,8 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
         <SpecialityPicker />
         <ClinicPicker value={only} onChange={setOnly} allValue="" />
         <div className="seg">{(['all', 'done', 'running'] as const).map(f => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}</div>
-        <button className="btn plain" onClick={() => setSheet('import')} title="Bring in clinics exported from another Mac">{I.upload()} Import</button>
-        <button className="btn plain" onClick={() => setSheet('export')} title="Pack clinics into one file for another Mac" disabled={!data?.clinics?.length}>{I.download()} Export</button>
+        <button className="btn plain" onClick={() => setSheet('import')} title="Bring in clinics exported from another Mac">{I.download()} Import</button>
+        <button className="btn plain" onClick={() => setSheet('export')} title="Pack clinics into one file for another Mac" disabled={!data?.clinics?.length}>{I.upload()} Export</button>
       </Toolbar>
       {sheet === 'export' && <ExportSheet onClose={() => setSheet(null)} />}
       {sheet === 'import' && <ImportSheet onClose={() => setSheet(null)} onDone={load} />}
@@ -66,6 +67,13 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
         </div>
         {err && <div className="err">{err}</div>}
 
+        {viewOnly ? (
+          <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <div className="ic tint" style={{ width: 32, height: 32 }}>{I.info({ width: 15, height: 15 })}</div>
+            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import clinics here. To add clinics or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
+            <button className="btn plain" onClick={() => setSheet('import')}>{I.download()} Import</button>
+          </div>
+        ) : (
         <div className="card pad" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="ic tint" style={{ width: 34, height: 34, borderRadius: 10, fontSize: 20, flexBasis: 34 }}>+</div>
           <div className="field" style={{ flex: 1, minWidth: 220, height: 34 }}>
@@ -77,6 +85,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
           </div>
           <button className="btn" onClick={add} disabled={busy || !handles.length}>{busy ? 'Starting…' : handles.length > 1 ? `Queue ${handles.length} clinics` : 'Add & Run'}</button>
         </div>
+        )}
 
         <QueuePanel />
 
@@ -103,10 +112,10 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
           <div className="group" style={{ overflow: 'visible' }}>
             {clinics.map(c => <ClinicRow key={c.handle} c={c} specialities={specialities} showSpec={!spec} onChange={load} onRun={onRun} />)}
             {clinics.length === 0 && all.length > 0 && <div className="empty">No clinics match these filters.</div>}
-            <div className="grow">
+            {!viewOnly && <div className="grow">
               <div className="ic" style={{ border: '1.5px dashed var(--c-fill2)', background: 'transparent', color: 'var(--c-muted)', fontSize: 20 }}>+</div>
               <div className="fill"><div className="t" style={{ color: 'var(--c-muted)' }}>Add a clinic</div><div className="s" style={{ color: 'var(--c-muted)' }}>Paste one or several Instagram handles above and pick their speciality</div></div>
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -141,6 +150,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
 }
 
 function ClinicRow({ c, specialities, showSpec, onChange, onRun }: { c: Clinic; specialities: string[]; showSpec: boolean; onChange: () => void; onRun: (id: number) => void }) {
+  const { viewOnly } = useContext(Ui)
   const [busy, setBusy] = useState(false)
   const [typing, setTyping] = useState(false)
   const [draft, setDraft] = useState('')
@@ -183,8 +193,8 @@ function ClinicRow({ c, specialities, showSpec, onChange, onRun }: { c: Clinic; 
       <div className="slot" style={{ width: 92 }}>{status}</div>
       <div className="caption slot" style={{ width: 52, justifyContent: 'flex-end' }}>{c.last_run ? fmt.date(c.last_run) : ''}</div>
       <div className="slot" style={{ width: 250, justifyContent: 'flex-end', gap: 6 }}>
-        {!active && (c.reels_total || 0) > 0 && <MoreMenu c={c} busy={busy} onRun={onRun} onStart={async n => { setBusy(true); try { const r = await api.more(c.handle, n); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) } }} />}
-        {!active && <button className="btn plain sm" disabled={busy} onClick={run} title={c.status === 'not_run' ? 'Scrape, download and analyse' : 'Run again; a scrape under a day old and files on disk are reused'}>{c.status === 'not_run' ? 'Run' : 'Re-run'}</button>}
+        {!active && !viewOnly && (c.reels_total || 0) > 0 && <MoreMenu c={c} busy={busy} onRun={onRun} onStart={async n => { setBusy(true); try { const r = await api.more(c.handle, n); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) } }} />}
+        {!active && !viewOnly && <button className="btn plain sm" disabled={busy} onClick={run} title={c.status === 'not_run' ? 'Scrape, download and analyse' : 'Run again; a scrape under a day old and files on disk are reused'}>{c.status === 'not_run' ? 'Run' : 'Re-run'}</button>}
         {active && c.run_id && <Link to={`/run/${c.run_id}`} className="btn plain sm">View run</Link>}
         {!active && <HoldButton className="btn plain sm" label="Delete" holdLabel="Hold…" ms={4000} onHold={async () => { await api.deleteClinic(c.handle, true); onChange() }} />}
       </div>

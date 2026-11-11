@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 
 FROZEN = getattr(sys, "frozen", False)
+# View-only: the slim backend shipped for Intel Macs. It reads, edits, exports and imports data but never scrapes,
+# downloads or transcribes (those libraries are not in it). Set by `reely-backend --view-only`.
+VIEW_ONLY = os.environ.get("REELY_VIEW_ONLY") == "1"
+VIEW_ONLY_MSG = ("Reely on this Mac is view-only (Intel build): browse, edit, export and import clinics here. "
+                 "Scraping, downloading and transcription run on an Apple Silicon Mac.")
 if FROZEN:
     _extra = [str(Path.home() / ".local" / "bin"), "/opt/homebrew/bin", "/usr/local/bin"]
     os.environ["PATH"] = ":".join(_extra + [p for p in os.environ.get("PATH", "").split(":") if p and p not in _extra])

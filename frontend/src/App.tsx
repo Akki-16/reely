@@ -12,7 +12,7 @@ import HowItWorks from './pages/HowItWorks'
 import Library from './pages/Library'
 import { UpdateCard, UpdaterProvider } from './updater'
 
-export type Health = { claude: any; browser: { logged_in?: boolean; installed?: boolean; error?: string }; whisper: string }
+export type Health = { claude: any; browser: { logged_in?: boolean; installed?: boolean; error?: string }; whisper: string; viewOnly?: boolean }
 type Theme = 'system' | 'light' | 'dark'
 
 /** App-wide UI state: sidebar, and the speciality filter shared by every page. */
@@ -21,7 +21,8 @@ export const Ui = createContext<{
   spec: string; setSpec: (v: string) => void
   specialities: string[]; clinics: Clinic[]; refreshClinics: () => void
   toast: (msg: string, undo?: () => void) => void
-}>({ sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {} })
+  viewOnly: boolean
+}>({ sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false })
 
 type ToastT = { id: number; msg: string; undo?: () => void }
 
@@ -56,7 +57,7 @@ export default function App() {
     const load = async () => {
       try {
         const [t, s] = await Promise.all([api.tools(), api.settings()])
-        setHealth(h => ({ ...h, claude: t.claude, whisper: s.whisper_model, browser: { ...h.browser, installed: t.browser?.installed } }))
+        setHealth(h => ({ ...h, claude: t.claude, whisper: s.whisper_model, viewOnly: !!t.view_only, browser: { ...h.browser, installed: t.browser?.installed } }))
       } catch { /* server not up yet */ }
     }
     load(); const id = setInterval(load, 30000); return () => clearInterval(id)
@@ -80,7 +81,7 @@ export default function App() {
   const toggle = <button className="iconbtn" aria-label={sideOpen ? 'Hide sidebar' : 'Show sidebar'} title={sideOpen ? 'Hide sidebar' : 'Show sidebar'} onClick={() => setSideOpen(!sideOpen)}>{I.sidebar()}</button>
 
   return (
-    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast }}>
+    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly }}>
     <UpdaterProvider>
       <div className={'shell' + (sideOpen ? '' : ' noside')}>
         <aside className="side" aria-hidden={!sideOpen}>
@@ -99,8 +100,12 @@ export default function App() {
             <UpdateCard />
             <div className="status">
               <div><span className={'dot ' + (health.claude?.installed ? '' : 'off')} />{health.claude?.installed ? 'Claude CLI · signed in' : 'Claude CLI · not installed'}</div>
-              <div><span className="dot" />Whisper {health.whisper || '…'}</div>
-              <div><span className={'dot ' + (health.browser?.logged_in ? '' : health.browser?.installed === false ? 'off' : 'warn')} />{health.browser?.logged_in ? 'Browser signed in' : health.browser?.installed === false ? 'Browser · not installed' : 'Browser · log in needed'}</div>
+              {health.viewOnly
+                ? <div title="Intel build: browse, edit, export and import here; scrape and transcribe on an Apple Silicon Mac"><span className="dot" style={{ background: 'var(--c-tint)' }} />View-only Mac</div>
+                : <>
+                  <div><span className="dot" />Whisper {health.whisper || '…'}</div>
+                  <div><span className={'dot ' + (health.browser?.logged_in ? '' : health.browser?.installed === false ? 'off' : 'warn')} />{health.browser?.logged_in ? 'Browser signed in' : health.browser?.installed === false ? 'Browser · not installed' : 'Browser · log in needed'}</div>
+                </>}
               <div className="seg theme" role="group" aria-label="Appearance">
                 <button className={theme === 'system' ? 'on' : ''} onClick={() => setTheme('system')} title="Match system">{I.auto()}</button>
                 <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme('light')} title="Light">{I.sun()}</button>

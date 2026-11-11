@@ -13,8 +13,12 @@ from pathlib import Path
 
 import certifi
 
-from huggingface_hub import scan_cache_dir, snapshot_download
-from huggingface_hub.constants import HF_HUB_CACHE
+try:
+    from huggingface_hub import scan_cache_dir, snapshot_download
+    from huggingface_hub.constants import HF_HUB_CACHE
+except ImportError:   # view-only build ships without the speech-model libraries
+    scan_cache_dir = snapshot_download = None
+    HF_HUB_CACHE = str(Path.home() / ".cache" / "huggingface" / "hub")
 
 from config import ENGINES, GGML_DIR, GGML_VAD, WHISPER_CLI, WHISPER_MODELS, model_info
 

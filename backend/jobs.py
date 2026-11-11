@@ -367,6 +367,9 @@ def _history(d: Path, rows: dict, before: bool):
 
 
 def start(clinic: str, settings: dict) -> int:
+    from config import VIEW_ONLY, VIEW_ONLY_MSG
+    if VIEW_ONLY:
+        raise RuntimeError(VIEW_ONLY_MSG)
     base = db.get_settings(); base.update({k: v for k, v in settings.items() if v is not None})
     if settings.get("top_n") is None:
         # a plain re-run never shrinks a clinic that was already processed deeper than the default

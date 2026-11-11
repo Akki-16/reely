@@ -17,3 +17,6 @@ __pycache__/
 build/bin/
 build/vendor/
 *.log
+.venv-view/
+build/dist-view/
+build/work-view/

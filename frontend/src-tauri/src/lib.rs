@@ -32,12 +32,20 @@ fn spawn_backend(app: &tauri::AppHandle) -> Result<(String, Child), String> {
         .path()
         .resource_dir()
         .map_err(|e| format!("resource dir: {e}"))?;
-    let exe = res.join("backend").join("reely-backend").join("reely-backend");
+    // Apple Silicon runs the full backend (scraping, downloads, Metal transcription). Intel Macs run the slim universal
+    // backend in view-only mode: browse, edit, export and import. REELY_VIEW_ONLY=1 forces the slim one for testing.
+    let view_only = std::env::consts::ARCH != "aarch64" || std::env::var("REELY_VIEW_ONLY").as_deref() == Ok("1");
+    let dir = if view_only { "reely-backend-view" } else { "reely-backend" };
+    let exe = res.join("backend").join(dir).join("reely-backend");
     if !exe.exists() {
         return Err(format!("backend binary missing at {}", exe.display()));
     }
-    let mut child = Command::new(&exe)
-        .arg("--port").arg("0")
+    let mut cmd = Command::new(&exe);
+    cmd.arg("--port").arg("0");
+    if view_only {
+        cmd.arg("--view-only");
+    }
+    let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()

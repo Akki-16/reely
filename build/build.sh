@@ -9,10 +9,17 @@ KEY="$HOME/.tauri/reely.key"
 export PATH="$HOME/.cargo/bin:$PATH"
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY")"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+mkdir -p "$ROOT/build/work"
 if [ "$1" != "--app" ]; then
-  echo "· backend bundle"
+  echo "· backend bundle (Apple Silicon, full)"
   "$ROOT/.venv/bin/pyinstaller" "$ROOT/build/reely-backend.spec" --noconfirm --distpath "$ROOT/build/dist" --workpath "$ROOT/build/work" > "$ROOT/build/work/pyinstaller.log" 2>&1
 fi
-echo "· app"
-( cd "$ROOT/frontend" && cargo tauri build > "$ROOT/build/work/tauri.log" 2>&1 ) || { tail -30 "$ROOT/build/work/tauri.log"; exit 1; }
+if [ "$1" != "--app" ] || [ ! -x "$ROOT/build/dist-view/reely-backend/reely-backend" ]; then
+  echo "· backend bundle (universal, view-only for Intel)"
+  [ -x "$ROOT/.venv-view/bin/pyinstaller" ] || "$ROOT/build/make_view_env.sh"
+  "$ROOT/.venv-view/bin/pyinstaller" "$ROOT/build/reely-backend-view.spec" --noconfirm --distpath "$ROOT/build/dist-view" --workpath "$ROOT/build/work-view" > "$ROOT/build/work/pyinstaller-view.log" 2>&1
+fi
+rustup target list --installed | grep -q x86_64-apple-darwin || rustup target add x86_64-apple-darwin
+echo "· app (universal: Apple Silicon + Intel)"
+( cd "$ROOT/frontend" && cargo tauri build --target universal-apple-darwin > "$ROOT/build/work/tauri.log" 2>&1 ) || { tail -30 "$ROOT/build/work/tauri.log"; exit 1; }
 "$ROOT/build/make_dmg.sh"

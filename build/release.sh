@@ -30,18 +30,19 @@ PY
 
 "$ROOT/build/build.sh"
 
-B="$ROOT/frontend/src-tauri/target/release/bundle"
+B="$ROOT/frontend/src-tauri/target/universal-apple-darwin/release/bundle"
 OUT="$ROOT/build/release/$TAG"; rm -rf "$OUT"; mkdir -p "$OUT"
-cp "$B/macos/Reely.app.tar.gz" "$OUT/Reely_${VER}_aarch64.app.tar.gz"
-cp "$B/macos/Reely.app.tar.gz.sig" "$OUT/Reely_${VER}_aarch64.app.tar.gz.sig"
-cp "$B/dmg/Reely_${VER}_aarch64.dmg" "$OUT/"
+cp "$B/macos/Reely.app.tar.gz" "$OUT/Reely_${VER}_universal.app.tar.gz"
+cp "$B/macos/Reely.app.tar.gz.sig" "$OUT/Reely_${VER}_universal.app.tar.gz.sig"
+cp "$B/dmg/Reely_${VER}_universal.dmg" "$OUT/"
 python3 - "$OUT" "$VER" "$REPO" "$TAG" "$NOTES" <<'PY'
 import json, sys, datetime
 out, ver, repo, tag, notes = sys.argv[1:6]
-sig = open(f"{out}/Reely_{ver}_aarch64.app.tar.gz.sig").read().strip()
+sig = open(f"{out}/Reely_{ver}_universal.app.tar.gz.sig").read().strip()
 latest = {"version": ver, "notes": notes, "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-          "platforms": {"darwin-aarch64": {"signature": sig,
-                        "url": f"https://github.com/{repo}/releases/download/{tag}/Reely_{ver}_aarch64.app.tar.gz"}}}
+          # one universal build serves both chips; Intel copies run it view-only
+          "platforms": {p: {"signature": sig, "url": f"https://github.com/{repo}/releases/download/{tag}/Reely_{ver}_universal.app.tar.gz"}
+                        for p in ("darwin-aarch64", "darwin-x86_64")}}
 json.dump(latest, open(f"{out}/latest.json", "w"), indent=2)
 PY
 echo "· release files in $OUT"; ls -lh "$OUT" | tail -n +2
@@ -49,7 +50,7 @@ echo "· release files in $OUT"; ls -lh "$OUT" | tail -n +2
 if [ "$PUBLISH" = "--publish" ]; then
   echo "· publishing $TAG to $REPO"
   gh release create "$TAG" --repo "$REPO" --title "Reely $VER" --notes "${NOTES:-Reely $VER}" \
-    "$OUT/latest.json" "$OUT/Reely_${VER}_aarch64.app.tar.gz" "$OUT/Reely_${VER}_aarch64.app.tar.gz.sig" "$OUT/Reely_${VER}_aarch64.dmg"
+    "$OUT/latest.json" "$OUT/Reely_${VER}_universal.app.tar.gz" "$OUT/Reely_${VER}_universal.app.tar.gz.sig" "$OUT/Reely_${VER}_universal.dmg"
   echo "· done: installed copies will offer $VER within six hours, or at once via Models › Updates › Check now"
 else
   echo "· not published. Publish later with: build/release.sh $VER \"$NOTES\" --publish   (or upload the four files to a $TAG release)"

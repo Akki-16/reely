@@ -8,17 +8,24 @@ Metal GPU), Claude Code CLI (your subscription) for annotation, insights and the
 ## Build the app
 
 ```bash
-cd frontend
-cargo tauri build          # → src-tauri/target/release/bundle/macos/Reely.app
-../build/make_dmg.sh       # → bundle/dmg/Reely_<version>_aarch64.dmg (with an Applications shortcut)
+build/build.sh             # both backends + universal Reely.app + signed update archive + dmg
+build/build.sh --app       # app + dmg only (reuses the backend bundles)
 ```
 
-The build runs `npm run build` for the UI and bundles the compiled Python backend from
-`build/dist/reely-backend` as a resource. Rebuild that backend whenever `backend/` changes:
+Plain `cargo tauri build` fails: updater artifacts need the signing key, which `build.sh` reads from
+`~/.tauri/reely.key`. Output lands in `frontend/src-tauri/target/universal-apple-darwin/release/bundle/`
+(`Reely_<version>_universal.dmg`).
 
-```bash
-.venv/bin/pyinstaller build/reely-backend.spec --noconfirm --distpath build/dist --workpath build/work
-```
+One universal app serves both chips, with two backends inside:
+
+| Chip | Backend | What it can do |
+|---|---|---|
+| Apple Silicon | `build/dist/reely-backend` (full, arm64) | everything: scrape, download, transcribe on Metal, annotate |
+| Intel | `build/dist-view/reely-backend` (slim, universal2, ~60 MB) | view-only: browse, edit, Ask, export and import |
+
+The shell picks one at launch by CPU (`REELY_VIEW_ONLY=1` forces the slim one for testing). The slim backend
+is built from `.venv-view` (python.org universal2 Python; `build/make_view_env.sh` creates it and fuses
+pydantic-core, its only compiled dependency, into a universal file) with `build/reely-backend-view.spec`.
 
 The spec also bundles `build/bin/whisper-cli`, a static whisper.cpp build with Metal (shader library embedded).
 Rebuild it with `build/build_whisper_cpp.sh` (clones whisper.cpp into `build/vendor/`, needs cmake:

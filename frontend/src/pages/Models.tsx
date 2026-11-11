@@ -5,6 +5,7 @@ import type { Health } from '../App'
 import { api, fmt } from '../api'
 import type { Engine, Model, ModelNotes } from '../api'
 import { UpdatesSection } from '../updater'
+import { I } from '../icons'
 
 export default function Models({ health, onHealth }: { health: Health; onHealth: (h: Health | ((h: Health) => Health)) => void }) {
   const [models, setModels] = useState<Model[]>([])
@@ -58,6 +59,12 @@ export default function Models({ health, onHealth }: { health: Health; onHealth:
           <div className="lead">Speech-to-text models on this Mac, plus the Claude CLI and the scraping browser.</div>
         </div>
 
+        {health.viewOnly ? (
+          <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <div className="ic tint" style={{ width: 32, height: 32 }}>{I.info({ width: 15, height: 15 })}</div>
+            <div style={{ fontSize: 13, lineHeight: 1.5 }}><b>Speech-to-text is not part of this build.</b> This Mac runs the view-only Intel build: transcripts, translations and analysis arrive through Import from an Apple Silicon Mac.</div>
+          </div>
+        ) : (
         <div>
           <div className="sechead"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Speech-to-text<Info title="Speech-to-text" text={<>{notes?.families} <br /><br />{notes?.measured}</>} /></span>
             <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -116,6 +123,7 @@ export default function Models({ health, onHealth }: { health: Health; onHealth:
             )
           })}
         </div>
+        )}
 
         <div className="grid3" style={{ alignItems: 'start' }}>
           <div>

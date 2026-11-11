@@ -16,7 +16,10 @@ def main():
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--data-root", default=None)
+    ap.add_argument("--view-only", action="store_true", help="slim Intel build: no scraping, downloading or transcription")
     args = ap.parse_args()
+    if args.view_only:
+        os.environ["REELY_VIEW_ONLY"] = "1"
     if args.data_root:
         os.environ["REEL_DATA_ROOT"] = args.data_root
 

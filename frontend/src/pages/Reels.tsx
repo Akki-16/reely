@@ -39,10 +39,11 @@ const DEFAULT_COLS = ['like_rate', 'views', 'hook_en', 'hook_type', 'format', 'f
 
 export default function Reels() {
   const { handle: hParam } = useParams()
-  const { spec, clinics, toast } = useContext(Ui)
+  const { spec, clinics, toast, viewOnly } = useContext(Ui)
   // hook library: which reels are saved, and the ones ticked for a bulk send
   const [lib, setLib] = useState<Set<string>>(new Set())
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [selecting, setSelecting] = useState(false)   // checkboxes only show in select mode
   const loadLib = () => api.library().then(rows => setLib(new Set(rows.map(r => r.shortcode)))).catch(() => {})
   useEffect(() => { loadLib() }, [])
   const sendToLibrary = async (codes: string[]) => {
@@ -119,6 +120,7 @@ export default function Reels() {
       <Toolbar title="Reels">
         <SpecialityPicker />
         <ClinicPicker value={handle} onChange={setHandle} bold />
+        <button className={'btn plain' + (selecting ? ' on' : '')} onClick={() => { if (selecting) setPicked(new Set()); setSelecting(!selecting) }} title={selecting ? 'Stop selecting' : 'Pick reels to send to the hook library'}>{selecting ? 'Done' : 'Select'}</button>
         <div className="seg" role="group" aria-label="View">
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} title="List with inspector">{I.list()}</button>
           <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')} title="Table of all columns">{I.table()}</button>
@@ -126,7 +128,7 @@ export default function Reels() {
         <div className="seg">{[['like_rate', 'Like-rate'], ['views', 'Views'], ['date', 'Date']].map(([k, l]) => <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>{l}</button>)}</div>
         <div className="field" style={{ width: 190 }}>{I.search()}<input placeholder="Search hooks, transcripts" value={q} onChange={e => setQ(e.target.value)} /></div>
         {tr && tr.job?.status === 'running' && <span className="pill amber"><span className="dot warn" />Translating {tr.job.total ? `${tr.job.done}/${tr.job.total}` : '…'}</span>}
-        {tr && tr.job?.status !== 'running' && tr.missing > 0 && <button className="btn plain" title={`${tr.missing} reels have no ${langName(tr.target || target)} text yet`} onClick={() => api.translate(handle).then(() => api.translateStatus(handle).then(setTr))}>Translate {tr.missing}</button>}
+        {tr && !viewOnly && tr.job?.status !== 'running' && tr.missing > 0 && <button className="btn plain" title={`${tr.missing} reels have no ${langName(tr.target || target)} text yet`} onClick={() => api.translate(handle).then(() => api.translateStatus(handle).then(setTr))}>Translate {tr.missing}</button>}
         <button className="btn plain" onClick={() => { setShowFilters(v => !v); setShowCols(false) }} style={showFilters ? { background: 'var(--c-tint-soft)', color: 'var(--c-tint)' } : undefined}>Filters</button>
         {view === 'table' && (
           <div style={{ position: 'relative' }}>
@@ -135,8 +137,8 @@ export default function Reels() {
           </div>
         )}
         {isTauri
-          ? <button className="btn plain" onClick={exportSave} title="Save a CSV to Downloads">{saved ? <>{I.check({ width: 12, height: 12 })} Saved</> : <>{I.download()} Export</>}</button>
-          : <a className="btn plain" href={exportHref} target="_blank" rel="noreferrer">{I.download()} Export</a>}
+          ? <button className="btn plain" onClick={exportSave} title="Save a CSV to Downloads">{saved ? <>{I.check({ width: 12, height: 12 })} Saved</> : <>{I.upload()} Export</>}</button>
+          : <a className="btn plain" href={exportHref} target="_blank" rel="noreferrer">{I.upload()} Export</a>}
       </Toolbar>
       <div className={'main' + (view === 'list' ? ' split' : '')}><div className="main-inner wide">
         {showFilters && (
@@ -173,7 +175,7 @@ export default function Reels() {
               {data?.reels.length === 0 && <div className="empty">No reels match. Clear the filters or run a clinic first.</div>}
               {data?.reels.map((r, i) => (
                 <div key={r.shortcode} className={'grow click' + (sel?.shortcode === r.shortcode ? ' on' : '')} onClick={() => setSel(r)}>
-                  <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onClick={e => e.stopPropagation()} onChange={() => togglePick(r.shortcode)} />
+                  {selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onClick={e => e.stopPropagation()} onChange={() => togglePick(r.shortcode)} />}
                   <div className="no">{i + 1}</div>
                   <div className="lr" style={{ color: lrColor(r.like_rate) }}>{r.like_rate != null ? r.like_rate.toFixed(2) + '%' : '—'}</div>
                   <div className="thumb" />
@@ -192,14 +194,14 @@ export default function Reels() {
           <div className="card tablewrap" style={{ marginTop: -12 }}>
             <table className="tbl">
               <thead><tr>
-                <th style={{ width: 28 }}><input type="checkbox" className="rowcheck" aria-label="Select all" checked={!!data?.reels.length && picked.size === data.reels.length} onChange={e => setPicked(e.target.checked ? new Set((data?.reels || []).map(r => r.shortcode)) : new Set())} /></th>
+                <th style={{ width: 28 }}>{selecting && <input type="checkbox" className="rowcheck" aria-label="Select all" checked={!!data?.reels.length && picked.size === data.reels.length} onChange={e => setPicked(e.target.checked ? new Set((data?.reels || []).map(r => r.shortcode)) : new Set())} />}</th>
                 {visibleCols.map(c => <th key={c.key} className={c.sort ? 'sortable' : ''} onClick={() => c.sort && setSort(c.sort)} style={c.num ? { textAlign: 'right' } : undefined}>{c.label}{c.sort && sort === c.sort ? ' ↓' : ''}</th>)}
                 <th />
               </tr></thead>
               <tbody>
                 {data?.reels.map((r, i) => (
                   <tr key={r.shortcode} className={sel?.shortcode === r.shortcode ? 'on' : ''} onClick={() => setSel(r)} onDoubleClick={e => { e.preventDefault(); window.getSelection()?.removeAllRanges(); sendToLibrary([r.shortcode]) }} title="Double-click to add to the hook library">
-                    <td onClick={e => e.stopPropagation()} style={{ width: 28 }}><span style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onChange={() => togglePick(r.shortcode)} />{lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 12, height: 12 })}</span>}</span></td>
+                    <td onClick={e => e.stopPropagation()} style={{ width: 28 }}><span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>{selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onChange={() => togglePick(r.shortcode)} />}{lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 12, height: 12 })}</span>}</span></td>
                     {visibleCols.map(c => <td key={c.key} className={(c.wrap ? 'wrap ' : '') + (c.num ? 'num' : '')} title={!c.wrap && typeof r[c.key as keyof Reel] === 'string' ? String(r[c.key as keyof Reel]) : undefined}>{c.fmt ? c.fmt(r, i) : String(r[c.key as keyof Reel] ?? '')}</td>)}
                     <td><button className="btn plain sm" onClick={e => { e.stopPropagation(); setSel(r); setView('list') }} title="Open in list view">Open</button></td>
                   </tr>
@@ -255,7 +257,8 @@ async function copyText(t: string) {
 const HOOK_SECONDS = 5
 
 function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; onEdit: (code: string, p: Partial<Reel>) => Promise<void>; target: string; onReplace: (r: Reel) => void; inLib: boolean; onLib: () => void }) {
-  const imported = useContext(Ui).clinics.find(c => c.handle === r.clinic)?.imported
+  const { clinics: allClinics, viewOnly } = useContext(Ui)
+  const imported = allClinics.find(c => c.handle === r.clinic)?.imported
   const [dl, setDl] = useState<{ status: string; error: string | null } | null>(null)
   const [hist, setHist] = useState<{ at: string; views: number | null; likes: number | null }[]>([])
   useEffect(() => { setHist([]); api.reelHistory(r.shortcode).then(setHist).catch(() => {}) }, [r.shortcode])
@@ -345,7 +348,7 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; on
                 <span>{imported && !imported.videos ? 'Video not included in the import' : 'No video on this Mac'}</span>
                 {dl?.status === 'running'
                   ? <span className="caption" style={{ color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="ic spinner" style={{ width: 14, height: 14, flexBasis: 14 }}><span style={{ width: 12, height: 12, borderWidth: 1.5 }} /></span>Downloading…</span>
-                  : <button className="btn sm" onClick={() => api.reelDownload(r.shortcode).then(setDl).catch(e => setDl({ status: 'error', error: e.message }))}>{I.download()} Download</button>}
+                  : viewOnly ? null : <button className="btn sm" onClick={() => api.reelDownload(r.shortcode).then(setDl).catch(e => setDl({ status: 'error', error: e.message }))}>{I.download()} Download</button>}
                 {dl?.status === 'error' && <span style={{ fontSize: 10.5, color: '#FFB4AE' }}>{dl.error}</span>}
               </div>}
             {r.duration != null && <span className="durpill">{fmt.dur(r.duration)}</span>}
@@ -388,7 +391,7 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; on
                   {available.map(k => <button key={k} className={showing === k ? 'on' : ''} onClick={() => setLang(k)}>{langName(k)}</button>)}
                 </div>
                 <span className="spacer" />
-                <div style={{ position: 'relative' }} ref={menuRef}>
+                {!viewOnly && <div style={{ position: 'relative' }} ref={menuRef}>
                   <button className={'btn plain sm' + (menu ? ' on' : '')} onClick={() => setMenu(v => !v)} disabled={job?.status === 'running'}>{job?.status === 'running' ? <><span className="dot warn" />Translating to {langName(job.to)}…</> : <>Translate {I.down({ width: 10, height: 10 })}</>}</button>
                   {menu && (
                     <div className="card menu">
@@ -405,7 +408,7 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; on
                       </form>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
               {job?.status === 'error' && <div className="err" style={{ fontSize: 12 }}>{job.error}</div>}
               {!tx && <div className="caption">Loading…</div>}

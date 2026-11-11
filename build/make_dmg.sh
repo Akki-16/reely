@@ -3,11 +3,11 @@
 # Tauri's own dmg step trips on this macOS's hdiutil deprecation warning, so we do it directly.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUNDLE="$ROOT/frontend/src-tauri/target/release/bundle"
+BUNDLE="$ROOT/frontend/src-tauri/target/universal-apple-darwin/release/bundle"
 APP="$BUNDLE/macos/Reely.app"
 VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
-OUT="$BUNDLE/dmg/Reely_${VER}_aarch64.dmg"
-[ -d "$APP" ] || { echo "build the app first: cd frontend && cargo tauri build"; exit 1; }
+OUT="$BUNDLE/dmg/Reely_${VER}_universal.dmg"
+[ -d "$APP" ] || { echo "build the app first: build/build.sh"; exit 1; }
 STAGE=$(mktemp -d)
 ditto "$APP" "$STAGE/Reely.app"
 ln -s /Applications "$STAGE/Applications"
