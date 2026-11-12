@@ -2,6 +2,7 @@ export type Clinic = {
   handle: string; display_name: string | null; followers: number | null
   reels_total: number; analysed: number; median_views: number | null; top_views: number | null
   median_like_rate: number | null; last_run: string | null; status: string; speciality: string | null; downloaded?: number; remaining?: number
+  missing_videos?: number; video_job?: { status: string; done: number; total: number | null; note: string; ok: number; failed: number } | null
   failed?: number; waiting?: string | null; run_id?: number
   imported?: { from: string; at: string; videos: boolean; transcripts: boolean; insights: boolean; chat: boolean } | null
 }
@@ -53,6 +54,8 @@ export const api = {
   reimport: (h: string) => j(`/api/clinics/${h}/import`, { method: 'POST' }),
   startRun: (h: string, settings: Record<string, string> = {}) => j<{ run_id: number }>(`/api/clinics/${h}/run`, { method: 'POST', body: JSON.stringify({ settings }) }),
   more: (h: string, count: number | null) => j<{ run_id: number; top_n: number }>(`/api/clinics/${h}/more`, { method: 'POST', body: JSON.stringify({ count }) }),
+  clinicVideos: (h: string, count: number | null) => j<any>(`/api/clinics/${h}/videos`, { method: 'POST', body: JSON.stringify({ count }) }),
+  clinicVideosStop: (h: string) => j<any>(`/api/clinics/${h}/videos/stop`, { method: 'POST' }),
   runs: (limit = 200) => j<Run[]>(`/api/runs?limit=${limit}`),
   queueAdd: (handles: string[], speciality: string | null) => j<{ added: any[] }>('/api/queue', { method: 'POST', body: JSON.stringify({ handles, speciality }) }),
   queue: () => j<{ items: any[]; lanes: Record<string, { holder: string | null; waiting: number }> }>('/api/queue'),

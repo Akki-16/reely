@@ -13,7 +13,7 @@ FROZEN = getattr(sys, "frozen", False)
 # downloads or transcribes (those libraries are not in it). Set by `reely-backend --view-only`.
 VIEW_ONLY = os.environ.get("REELY_VIEW_ONLY") == "1"
 VIEW_ONLY_MSG = ("Reely on this Mac is view-only (Intel build): browse, edit, export and import clinics here. "
-                 "Scraping, downloading and transcription run on an Apple Silicon Mac.")
+                 "Scraping and transcription run on an Apple Silicon Mac; videos of imported reels can be downloaded here.")
 if FROZEN:
     _extra = [str(Path.home() / ".local" / "bin"), "/opt/homebrew/bin", "/usr/local/bin"]
     os.environ["PATH"] = ":".join(_extra + [p for p in os.environ.get("PATH", "").split(":") if p and p not in _extra])
@@ -147,6 +147,9 @@ GGML_DIR = SUPPORT_DIR / "models" / "ggml"
 # whisper-cli: static build of whisper.cpp with Metal (see build/build_whisper_cpp.sh). Inside the PyInstaller
 # bundle it sits in _internal/bin; in the source tree in build/bin.
 WHISPER_CLI = (Path(getattr(sys, "_MEIPASS", APP_DIR)) / "bin" / "whisper-cli") if FROZEN else (APP_DIR / "build" / "bin" / "whisper-cli")
+# Remux-only universal ffmpeg (build/build_ffmpeg.sh), bundled beside whisper-cli when it has been built. yt-dlp uses
+# it to join Instagram's separate video and audio streams; without it downloads use the single-file format.
+FFMPEG_BIN = (Path(getattr(sys, "_MEIPASS", APP_DIR)) / "bin" / "ffmpeg") if FROZEN else (APP_DIR / "build" / "bin" / "ffmpeg")
 
 
 def model_info(model_id: str) -> dict | None:

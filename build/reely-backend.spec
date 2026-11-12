@@ -14,6 +14,10 @@ _wcli = os.path.join(SPECPATH, "bin", "whisper-cli")
 if not os.path.exists(_wcli):
     raise SystemExit("build/bin/whisper-cli missing — run build/build_whisper_cpp.sh first")
 binaries += [(_wcli, "bin")]
+# remux-only universal ffmpeg (build/build_ffmpeg.sh), when built, so downloads do not depend on Homebrew
+_ff = os.path.join(SPECPATH, "bin", "ffmpeg")
+if os.path.exists(_ff):
+    binaries += [(_ff, "bin")]
 
 for pkg in ("faster_whisper", "ctranslate2", "av", "onnxruntime", "tokenizers", "huggingface_hub", "playwright", "certifi"):
     d, b, h = collect_all(pkg)

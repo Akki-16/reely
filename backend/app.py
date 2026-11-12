@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from config import VIEW_ONLY, VIEW_ONLY_MSG  # noqa: E402
 
 # Work that needs the scraping browser, yt-dlp or a speech model; refused by the view-only (Intel) build.
-_WORK = re.compile(r"^/api/(clinics(/[^/]+/(run|more|retry|refresh|translate))?|queue|reels/[^/]+/(download|translate)"
+_WORK = re.compile(r"^/api/(clinics(/[^/]+/(run|more|retry|refresh|translate))?|queue|reels/[^/]+/translate"
                    r"|models/[^/]+/download|browser/(login|install))$")
 
 
@@ -84,6 +84,8 @@ def overview():
         c["imported"] = importer.read_meta(DATA_ROOT / c["handle"]).get("imported")
         from pipeline import failures as _fl
         c["failed"] = sum(1 for v in _fl.load(DATA_ROOT / c["handle"]).values() if not v.get("ignored"))
+        c["missing_videos"] = db.one("SELECT COUNT(*) n FROM reels WHERE clinic=? AND (video_file IS NULL OR video_file='')", (c["handle"],))["n"]
+        c["video_job"] = _vid_jobs.get(c["handle"])
         q = db.one("SELECT id, stage, stages FROM runs WHERE clinic=? AND status IN ('queued','running','paused') ORDER BY id DESC LIMIT 1", (c["handle"],))
         c["waiting"] = None
         if q:
@@ -651,7 +653,7 @@ def reel_download(shortcode: str):
 
     def work():
         try:
-            res = download.download_reels(d, [row], db.get_settings().get("video_quality", "low"), pause=(0, 0))
+            res = download.download_reels(d, [row], db.get_settings().get("video_quality", "low"), pause=(0, 0), force=True)
             vp = video_path(d, shortcode)
             if not vp:
                 raise RuntimeError((res.get("failures") or [{}])[0].get("error") or "download failed")
@@ -662,6 +664,69 @@ def reel_download(shortcode: str):
             state.update({"status": "error", "error": str(e).splitlines()[0][:300]})
     threading.Thread(target=work, daemon=True).start()
     return state
+
+
+# ---------- download videos only (no run): imported clinics, Intel view-only Macs ----------
+_vid_jobs: dict = {}
+
+
+class VideosBody(BaseModel):
+    count: int | None = None    # how many of the missing videos (best like-rate first); None = all
+
+
+@app.post("/api/clinics/{handle}/videos")
+def clinic_videos(handle: str, body: VideosBody):
+    """Fetch videos for analysed reels that have none on this Mac, without scraping, transcribing or annotating.
+    Reels keep their imported transcripts and analysis; the video slots in beside them."""
+    from pipeline import download, index as index_mod
+    from pipeline.views_fmt import video_path
+    if jobs.active_for(handle):
+        raise HTTPException(409, "a run is active for this clinic")
+    if _vid_jobs.get(handle, {}).get("status") == "running":
+        return _vid_jobs[handle]
+    d = DATA_ROOT / handle
+    missing = db.rows("SELECT shortcode FROM reels WHERE clinic=? AND (video_file IS NULL OR video_file='') "
+                      "ORDER BY like_rate DESC NULLS LAST", (handle,))
+    idx = {r["shortcode"]: r for r in index_mod.load_index(d)}
+    todo = [idx[m["shortcode"]] for m in missing if m["shortcode"] in idx]
+    if body.count:
+        todo = todo[: max(1, body.count)]
+    if not todo:
+        raise HTTPException(409, "every analysed reel already has its video")
+    st = db.get_settings()
+    state = _vid_jobs[handle] = {"status": "running", "done": 0, "total": len(todo), "note": "starting…", "ok": 0, "failed": 0, "stop": False}
+
+    def prog(i, n, note="", extra=None):
+        state.update({"done": i, "total": n, "note": note})
+
+    def work():
+        try:
+            res = download.download_reels(d, todo, st.get("video_quality", "low"), progress=prog, force=True,
+                                          should_stop=lambda: state.get("stop"), pace=st.get("download_pace", "fast"))
+            with db.tx() as c:
+                for r in todo:
+                    vp = video_path(d, r["shortcode"])
+                    if vp:
+                        c.execute("UPDATE reels SET video_file=? WHERE shortcode=?", (vp.name, r["shortcode"]))
+            state.update({"status": "stopped" if state.get("stop") else "done", "ok": res["ok"], "failed": res["failed"],
+                          "note": f"{res['ok']} downloaded" + (f" · {res['failed']} failed" if res["failed"] else "")})
+        except Exception as e:
+            state.update({"status": "error", "note": str(e).splitlines()[0][:300] if str(e) else type(e).__name__})
+    threading.Thread(target=work, daemon=True).start()
+    return state
+
+
+@app.get("/api/clinics/{handle}/videos")
+def clinic_videos_status(handle: str):
+    return _vid_jobs.get(handle) or {"status": "idle"}
+
+
+@app.post("/api/clinics/{handle}/videos/stop")
+def clinic_videos_stop(handle: str):
+    j = _vid_jobs.get(handle)
+    if j and j.get("status") == "running":
+        j["stop"] = True
+    return j or {"status": "idle"}
 
 
 @app.get("/api/reels/{shortcode}/download")

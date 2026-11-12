@@ -368,7 +368,7 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }: { r: 
                 <span>{imported && !imported.videos ? 'Video not included in the import' : 'No video on this Mac'}</span>
                 {dl?.status === 'running'
                   ? <span className="caption" style={{ color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="ic spinner" style={{ width: 14, height: 14, flexBasis: 14 }}><span style={{ width: 12, height: 12, borderWidth: 1.5 }} /></span>Downloading…</span>
-                  : viewOnly ? null : <button className="btn sm" onClick={() => api.reelDownload(r.shortcode).then(setDl).catch(e => setDl({ status: 'error', error: e.message }))}>{I.download()} Download</button>}
+                  : <button className="btn sm" onClick={() => api.reelDownload(r.shortcode).then(setDl).catch(e => setDl({ status: 'error', error: e.message }))}>{I.download()} Download</button>}
                 {dl?.status === 'error' && <span style={{ fontSize: 10.5, color: '#FFB4AE' }}>{dl.error}</span>}
               </div>}
             {r.duration != null && <span className="durpill">{fmt.dur(r.duration)}</span>}

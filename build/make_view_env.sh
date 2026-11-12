@@ -8,7 +8,7 @@ PY=/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14
 V="$ROOT/.venv-view"
 rm -rf "$V"; "$PY" -m venv "$V"
 "$V/bin/pip" install -q --upgrade pip
-"$V/bin/pip" install -q fastapi uvicorn pydantic certifi pyinstaller
+"$V/bin/pip" install -q fastapi uvicorn pydantic certifi pyinstaller yt-dlp
 VER=$("$V/bin/python" -c "import pydantic_core; print(pydantic_core.__version__)")
 W=$(mktemp -d)
 for plat in macosx_11_0_arm64 macosx_10_12_x86_64; do

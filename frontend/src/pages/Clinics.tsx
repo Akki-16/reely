@@ -70,7 +70,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
         {viewOnly ? (
           <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <div className="ic tint" style={{ width: 32, height: 32 }}>{I.info({ width: 15, height: 15 })}</div>
-            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import clinics here. To add clinics or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
+            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import clinics here, and download the videos of imported reels from the Videos menu. To add clinics or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
             <button className="btn plain" onClick={() => setSheet('import')}>{I.download()} Import</button>
           </div>
         ) : (
@@ -190,10 +190,13 @@ function ClinicRow({ c, specialities, showSpec, onChange, onRun }: { c: Clinic; 
             {specialities.map(x => <option key={x} value={x}>{x}</option>)}
             <option value="__new">Type a new one…</option>
           </select>)}</div>
-      <div className="slot" style={{ width: 92 }}>{status}</div>
+      <div className="slot" style={{ width: 92 }}>{c.video_job?.status === 'running'
+        ? <span className="pill tint" title={c.video_job.note}><span className="dot" style={{ background: 'var(--c-tint)' }} />{c.video_job.done}/{c.video_job.total}</span>
+        : status}</div>
       <div className="caption slot" style={{ width: 52, justifyContent: 'flex-end' }}>{c.last_run ? fmt.date(c.last_run) : ''}</div>
       <div className="slot" style={{ width: 250, justifyContent: 'flex-end', gap: 6 }}>
-        {!active && !viewOnly && (c.reels_total || 0) > 0 && <MoreMenu c={c} busy={busy} onRun={onRun} onStart={async n => { setBusy(true); try { const r = await api.more(c.handle, n); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) } }} />}
+        {c.video_job?.status === 'running' && <button className="btn plain sm" onClick={() => api.clinicVideosStop(c.handle).then(onChange)} title={c.video_job.note}>Stop videos</button>}
+        {!active && c.video_job?.status !== 'running' && (viewOnly ? (c.missing_videos || 0) > 0 : (c.reels_total || 0) > 0) && <MoreMenu c={c} busy={busy} viewOnly={viewOnly} onChange={onChange} onRun={onRun} onStart={async n => { setBusy(true); try { const r = await api.more(c.handle, n); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) } }} />}
         {!active && !viewOnly && <button className="btn plain sm" disabled={busy} onClick={run} title={c.status === 'not_run' ? 'Scrape, download and analyse' : 'Run again; a scrape under a day old and files on disk are reused'}>{c.status === 'not_run' ? 'Run' : 'Re-run'}</button>}
         {active && c.run_id && <Link to={`/run/${c.run_id}`} className="btn plain sm">View run</Link>}
         {!active && <HoldButton className="btn plain sm" label="Delete" holdLabel="Hold…" ms={4000} onHold={async () => { await api.deleteClinic(c.handle, true); onChange() }} />}
@@ -216,7 +219,7 @@ function SpecInput({ value, onChange, options, placeholder, autoFocus, onEnter, 
 }
 
 /** "More" on a scraped clinic: process the next reels by views without re-scraping or re-downloading. */
-function MoreMenu({ c, busy, onStart, onRun }: { c: Clinic; busy: boolean; onStart: (count: number | null) => void; onRun: (id: number) => void }) {
+function MoreMenu({ c, busy, onStart, onRun, viewOnly, onChange }: { c: Clinic; busy: boolean; onStart: (count: number | null) => void; onRun: (id: number) => void; viewOnly?: boolean; onChange?: () => void }) {
   const [open, setOpen] = useState(false)
   const [custom, setCustom] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -225,11 +228,13 @@ function MoreMenu({ c, busy, onStart, onRun }: { c: Clinic; busy: boolean; onSta
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [open])
-  const left = c.remaining || 0
+  const left = viewOnly ? 0 : c.remaining || 0
+  const missing = c.missing_videos || 0
   const go = (n: number | null) => { setOpen(false); setCustom(''); onStart(n) }
+  const videos = async (n: number | null) => { setOpen(false); try { await api.clinicVideos(c.handle, n); onChange?.() } catch (e: any) { alert(e.message) } }
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <button className={'btn plain sm' + (open ? ' on' : '')} disabled={busy} onClick={() => setOpen(v => !v)} title={`${left.toLocaleString()} scraped reels are not downloaded yet`}>More {I.down({ width: 10, height: 10 })}</button>
+      <button className={'btn plain sm' + (open ? ' on' : '')} disabled={busy} onClick={() => setOpen(v => !v)} title={viewOnly ? `${missing} analysed reels have no video on this Mac` : `${left.toLocaleString()} scraped reels are not downloaded yet`}>{viewOnly ? 'Videos' : 'More'} {I.down({ width: 10, height: 10 })}</button>
       {open && (
         <div className="card menu" style={{ width: 230 }}>
           {left > 0 && <>
@@ -245,8 +250,15 @@ function MoreMenu({ c, busy, onStart, onRun }: { c: Clinic; busy: boolean; onSta
           <div className="caption" style={{ padding: '4px 8px 6px', lineHeight: 1.4 }}>Keeps the scrape and everything already downloaded, transcribed and annotated.</div>
           <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0 2px' }} />
           </>}
-          {(c.failed || 0) > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Retry failed</span><span className="caption">{c.failed}</span></button>}
-          <button className="row" onClick={async () => { setOpen(false); try { const r = await api.refreshStats(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Re-scrape view counts and re-fetch likes; no videos are downloaded"><span>Refresh stats</span><span className="caption">views + likes</span></button>
+          {missing > 0 && <>
+            <div className="caption" style={{ padding: '6px 8px 4px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', fontSize: 10.5 }}>Videos only</div>
+            {[25, 50, 100].filter(n => n < missing).map(n => <button key={'v' + n} className="row" onClick={() => videos(n)}><span>Next {n} videos</span><span className="caption">best like-rate</span></button>)}
+            <button className="row" onClick={() => videos(null)}><span>All missing videos</span><span className="caption">{missing.toLocaleString()}</span></button>
+            <div className="caption" style={{ padding: '4px 8px 6px', lineHeight: 1.4 }}>For analysed reels with no video here, such as an import without videos. Transcripts and notes stay as they are.</div>
+            {!viewOnly && <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0 2px' }} />}
+          </>}
+          {!viewOnly && (c.failed || 0) > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Retry failed</span><span className="caption">{c.failed}</span></button>}
+          {!viewOnly && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.refreshStats(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Re-scrape view counts and re-fetch likes; no videos are downloaded"><span>Refresh stats</span><span className="caption">views + likes</span></button>}
         </div>
       )}
     </div>

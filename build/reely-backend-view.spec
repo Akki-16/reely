@@ -5,12 +5,21 @@
 # Build env: .venv-view (python.org universal2 Python) with fastapi, uvicorn, pydantic, certifi, pyinstaller, and
 # pydantic-core's .so fused to universal2 (build/make_view_env.sh does all of this).
 # Build:  .venv-view/bin/pyinstaller build/reely-backend-view.spec --noconfirm --distpath build/dist-view --workpath build/work-view
-from PyInstaller.utils.hooks import collect_all
+import os
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 block_cipher = None
 datas, binaries, hiddenimports = [], [], []
 d, b, h = collect_all("certifi")
 datas += d; binaries += b; hiddenimports += h
+
+# yt-dlp (pure Python) so Intel Macs can download the videos of imported reels; its extractors load lazily
+hiddenimports += collect_submodules("yt_dlp")
+datas += collect_data_files("yt_dlp")
+# remux-only universal ffmpeg from build/build_ffmpeg.sh, when built; without it downloads use the single-file format
+_ff = os.path.join(SPECPATH, "bin", "ffmpeg")
+if os.path.exists(_ff):
+    binaries += [(_ff, "bin")]
 
 hiddenimports += [
     "uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto", "uvicorn.loops.asyncio", "uvicorn.protocols", "uvicorn.protocols.http",
@@ -30,7 +39,7 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "matplotlib", "PIL", "numpy", "faster_whisper", "ctranslate2", "av", "onnxruntime", "tokenizers",
-              "huggingface_hub", "playwright", "yt_dlp", "uvloop", "httptools", "watchfiles", "websockets", "PyInstaller", "delocate"],
+              "huggingface_hub", "playwright", "uvloop", "httptools", "watchfiles", "websockets", "PyInstaller", "delocate"],
     cipher=block_cipher,
     noarchive=False,
 )

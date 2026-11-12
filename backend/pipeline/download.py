@@ -8,11 +8,19 @@ from .views_fmt import file_stem, video_path, info_path
 
 
 def _ffmpeg() -> str | None:
-    """ffmpeg for merging separate audio/video streams. The packaged app starts with a bare PATH, so look in the usual places."""
+    """ffmpeg for merging separate audio/video streams: the one bundled with the app first, then the usual
+    system places (the packaged app starts with a bare PATH). None means downloads use the single-file format."""
     import shutil
-    for c in (shutil.which("ffmpeg"), "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
-        if c and Path(c).exists():
-            return str(Path(c).parent)
+    if os.environ.get("REELY_FFMPEG") == "none":   # testing: behave like a Mac without ffmpeg
+        return None
+    try:
+        from config import FFMPEG_BIN
+        bundled = str(FFMPEG_BIN)
+    except Exception:
+        bundled = None
+    for c in (bundled, shutil.which("ffmpeg"), "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+        if c and Path(c).is_file() and os.access(c, os.X_OK):
+            return c
     return None
 
 
@@ -33,7 +41,10 @@ def download_one(url: str, out_dir: Path, quality: str = "low", stats: dict | No
     `stats` collects transfer bytes and seconds from yt-dlp's progress hooks (network time only)."""
     import yt_dlp
     _certs()
-    opts = {"quiet": True, "no_warnings": True, "noprogress": True, "format": "bv*+ba/b", "merge_output_format": "mp4",
+    ff = _ffmpeg()
+    # with ffmpeg: small 360p video + audio streams joined into one mp4; without it: Instagram's ready-made mp4
+    # (video and audio together, usually 720p, a few times larger)
+    opts = {"quiet": True, "no_warnings": True, "noprogress": True, "format": "bv*+ba/b" if ff else "b", "merge_output_format": "mp4",
             "writeinfojson": True, "outtmpl": str(out_dir / "%(id)s.%(ext)s"), "retries": 3}
     if stats is not None:
         def hook(d):
@@ -43,7 +54,6 @@ def download_one(url: str, out_dir: Path, quality: str = "low", stats: dict | No
         opts["progress_hooks"] = [hook]
     if quality == "low":
         opts["format_sort"] = ["res:480", "+size"]
-    ff = _ffmpeg()
     if ff:
         opts["ffmpeg_location"] = ff
     with yt_dlp.YoutubeDL(opts) as y:
@@ -64,7 +74,7 @@ def _blocked(err: str) -> bool:
 
 
 def download_reels(clinic_dir: Path, rows: list[dict], quality: str = "low",
-                   pause=None, progress=None, should_stop=lambda: False, pace: str = "fast") -> dict:
+                   pause=None, progress=None, should_stop=lambda: False, pace: str = "fast", force: bool = False) -> dict:
     """Download rows in order. Skips reels already on disk, reels already transcribed (their video may have been
     cleared to save space) and reels the user chose to ignore. `pause` (min, max) overrides adaptive pacing."""
     from . import failures
@@ -91,7 +101,8 @@ def download_reels(clinic_dir: Path, rows: list[dict], quality: str = "low",
         if should_stop():
             break
         code = r["shortcode"]
-        if info_path(clinic_dir, code) and (video_path(clinic_dir, code) or transcript_path(clinic_dir, code)):
+        # force: fetch the video even when the reel is already transcribed (an import without videos, or a clean-up)
+        if info_path(clinic_dir, code) and (video_path(clinic_dir, code) or (transcript_path(clinic_dir, code) and not force)):
             skipped += 1
             if progress: progress(i, len(rows), f"{code} already {'downloaded' if video_path(clinic_dir, code) else 'transcribed'}", extra())
             continue
