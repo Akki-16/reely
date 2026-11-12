@@ -47,7 +47,8 @@ export type ScriptData = {
 export type Pattern = { id: string; name: string; description?: string; hook_style?: string; structure?: string; length_s?: number; on_camera?: string; works_because?: string; good_for?: string; examples?: string[]; example_hooks?: string[]; accounts?: string[]; median_like_rate?: number | null; count?: number }
 export type PlanItem = { id: string; topic: string; angle?: string; pattern_id?: string; pattern?: string; language: string; person_id?: string | null; on_camera?: string; refs?: string[]; why?: string; ok?: boolean; warn?: string; tick?: boolean; script_id?: number | null; script_status?: string; script_title?: string }
 export type Plan = { id: number; client_id: number; month: string; count: number; status: string; note?: string; error?: string | null; items: PlanItem[]; settings: { mix?: Record<string, number>; cast?: string; note?: string }; created_at: string }
-export type Script = { id: number; client_id: number; plan_id?: number | null; pattern?: string; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number }
+export type Script = { id: number; client_id: number; plan_id?: number | null; pattern?: string; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number; ref?: RefReel | null }
+export type RefReel = { shortcode: string; clinic?: string; url: string; hook_en?: string; hook_original?: string; format?: string; hook_type?: string; language?: string; duration?: number; views?: number; likes?: number; like_rate?: number; summary?: string; video_file?: string; date?: string; missing?: boolean }
 
 /** Backend origin. Empty in the browser (same origin); set by main.tsx inside the Tauri shell. */
 export let BASE = ''
@@ -160,7 +161,7 @@ export const api = {
   planRetry: (pid: number) => j(`/api/plans/${pid}/retry`, { method: 'POST' }),
   planDelete: (pid: number) => j(`/api/plans/${pid}`, { method: 'DELETE' }),
   planGenerate: (pid: number) => j<{ queued: number }>(`/api/plans/${pid}/generate`, { method: 'POST' }),
-  scriptPdf: (sid: number) => j<{ path: string; pdf: boolean; note?: string }>(`/api/scripts/${sid}/pdf`, { method: 'POST' }),
+  scriptPdf: (sid: number, ref = false) => j<{ path: string; pdf: boolean; note?: string }>(`/api/scripts/${sid}/pdf?ref=${ref}`, { method: 'POST' }),
   reveal: (path = '') => j('/api/reveal?path=' + encodeURIComponent(path), { method: 'POST' }),
 }
 

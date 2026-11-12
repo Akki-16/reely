@@ -708,7 +708,20 @@ def brief_html(doc: dict) -> str:
 </body></html>"""
 
 
-def script_html(doc: dict, s: dict) -> str:
+def _ref_block(r: dict | None) -> str:
+    if not r:
+        return ""
+    if r.get("missing"):
+        return f"<h2>Reference reel</h2><p class=small><a href='{_e(r['url'])}'>{_e(r['url'])}</a></p>"
+    stats = " · ".join(x for x in [f"@{r.get('clinic')}", r.get("format"), f"{int(r['duration'])}s" if r.get("duration") else None,
+                                   f"{r['like_rate']:.2f}% like-rate" if r.get("like_rate") is not None else None,
+                                   f"{r['views']:,} views" if r.get("views") else None] if x)
+    return (f"<div style='break-inside: avoid'><h2>Reference reel · for the shoot team</h2><p><b>{_e(r.get('hook_en') or r.get('hook_original'))}</b><br>"
+            f"<span class='small muted'>{_e(stats)}</span><br><span class=small>{_e(r.get('summary'))}</span><br>"
+            f"<a class=small href='{_e(r.get('url'))}'>{_e(r.get('url'))}</a></p></div>")
+
+
+def script_html(doc: dict, s: dict, ref: dict | None = None) -> str:
     d = json.loads(s["data"] or "{}")
     person = next((p for p in doc["people"] if p["id"] == s["person_id"]), None)
     pick = d.get("hook_pick") or 0
@@ -736,6 +749,7 @@ def script_html(doc: dict, s: dict) -> str:
 {'<h2>Advertising check</h2><ul>' + comp + '</ul>' if comp else ''}
 <h2>Caption</h2><p style='white-space:pre-wrap'>{_e(d.get('caption'))}</p><p class='small muted'>{_e(' '.join(d.get('hashtags') or []))}</p>
 <div class=cta><span class=eyebrow style=color:#c4b5fd>Ends with</span><br><b>{_e(d.get('cta'))}</b></div>
+{_ref_block(ref)}
 <div class=sign><span>Reviewed by ____________________</span><span>Date __________</span><span>☐ Approved ☐ Changes needed</span></div>
 </body></html>"""
 
@@ -1098,13 +1112,24 @@ def script_new(cid: int, body: NewScript):
     return {"id": sid}
 
 
+def _ref_reel(code: str | None) -> dict | None:
+    """The reference reel a script was written from, for the script view and the PDF."""
+    if not code:
+        return None
+    r = db.one("SELECT r.shortcode, r.clinic, r.url, r.hook_en, r.hook_original, r.format, r.hook_type, r.language, r.duration, "
+               "r.views, r.likes, r.like_rate, r.summary, r.video_file, r.date FROM reels r WHERE r.shortcode=?", (code,))
+    return r or {"shortcode": code, "url": f"https://www.instagram.com/reel/{code}/", "missing": True}
+
+
 @router.get("/api/scripts/{sid}")
 def script_get(sid: int):
     init()
     s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     if not s:
         raise HTTPException(404)
-    return _script_row(s)
+    row = _script_row(s)
+    row["ref"] = _ref_reel(s["shortcode"])
+    return row
 
 
 class ScriptEdit(BaseModel):
@@ -1145,9 +1170,9 @@ def script_delete(sid: int):
 
 
 @router.post("/api/scripts/{sid}/pdf")
-def script_pdf(sid: int):
+def script_pdf(sid: int, ref: bool = False):
     s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     if not s or not s["data"]:
         raise HTTPException(400, "This script isn't ready yet")
     doc = _load(s["client_id"])
-    return save_pdf(script_html(doc, s), f"{doc['name']} - {s['title'] or 'script'}")
+    return save_pdf(script_html(doc, s, _ref_reel(s["shortcode"]) if ref else None), f"{doc['name']} - {s['title'] or 'script'}")

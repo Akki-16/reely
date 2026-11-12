@@ -75,6 +75,7 @@ export function ReviewShare({ s, onClose, onSaved }: { s: Script; onClose: () =>
   const { toast } = useContext(Ui)
   const [d, setD] = useState<ScriptData>(() => JSON.parse(JSON.stringify(s.data || {})))
   const [markReview, setMarkReview] = useState(s.status === 'draft')
+  const [withRef, setWithRef] = useState(false)
   const [busy, setBusy] = useState(false)
   const multi = s.language !== 'en'
   const pick = d.hook_pick || 0
@@ -87,7 +88,7 @@ export function ReviewShare({ s, onClose, onSaved }: { s: Script; onClose: () =>
       const r = await api.scriptEdit(s.id, { data: d, ...(pdf && markReview ? { status: 'review' } : {}) })
       onSaved(r)
       if (pdf) {
-        const p = await api.scriptPdf(s.id)
+        const p = await api.scriptPdf(s.id, withRef)
         toast(p.pdf ? `Saved ${p.path.split('/').pop()} to Downloads` : p.note || 'Saved')
       } else toast('Changes saved')
       onClose()
@@ -132,6 +133,7 @@ export function ReviewShare({ s, onClose, onSaved }: { s: Script; onClose: () =>
           {multi && <span className="caption">Have a native speaker read the {LANGS[s.language] || s.language} lines.</span>}
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={markReview} onChange={e => setMarkReview(e.target.checked)} style={{ accentColor: 'var(--c-tint)' }} /><span className="sub">Mark as <b>With the doctor</b> when the PDF is saved</span></label>
+        {s.shortcode && <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={withRef} onChange={e => setWithRef(e.target.checked)} style={{ accentColor: 'var(--c-tint)' }} /><span className="sub">Add the reference reel at the end, for the shoot team <span className="caption">(leave off for the doctor)</span></span></label>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', position: 'sticky', bottom: -20, background: 'var(--c-card)', padding: '10px 0 0' }}>
           <button className="btn plain" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn plain" onClick={() => save(false)} disabled={busy}>Save changes</button>

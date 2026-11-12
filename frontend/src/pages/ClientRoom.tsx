@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { HoldButton, Toolbar, Ui } from '../App'
-import { api, fmt, isTauri, langName, LANGS, lrColor } from '../api'
+import { api, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
 import type { Branch, Brief, ClientDoc, Person, Plan, Reel, Script, ScriptData, Source } from '../api'
 import { I } from '../icons'
 import { Avatar, SCRIPT_LANGS } from './Clients'
@@ -657,7 +657,6 @@ function ScriptDetail({ c, sid, onChange, onGone }: { c: ClientDoc; sid: number;
           <Inline value={d.title || s.title} onSave={v => put({ title: v })} style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.02em' }} />
           <div className="sub" style={{ marginTop: 4 }}>{[LANGS[s.language] || s.language, d.duration_s ? `about ${d.duration_s}s` : null, person ? `in ${person.name}'s voice` : 'for the clinic', (d.on_camera || []).length ? 'on camera: ' + d.on_camera!.join(', ') : null].filter(Boolean).join(' · ')}</div>
           {(d.pattern || s.pattern) && <div className="caption" style={{ marginTop: 3 }}>Pattern: {d.pattern || s.pattern}</div>}
-          {s.shortcode && <div className="caption" style={{ marginTop: 3 }}>From @{s.ref_clinic || '…'}'s reel “{(s.ref_hook || '').slice(0, 70)}{(s.ref_hook || '').length > 70 ? '…' : ''}”</div>}
         </div>
         <div className="seg">{['draft', 'review', 'approved'].map(k => <button key={k} className={s.status === k ? 'on' : ''} onClick={() => setStatus(k)}>{STATUS[k][0]}</button>)}</div>
       </div>
@@ -669,6 +668,7 @@ function ScriptDetail({ c, sid, onChange, onGone }: { c: ClientDoc; sid: number;
         <HoldButton label="Delete script" ms={1500} onHold={async () => { await api.scriptDelete(sid); onGone() }} className="btn plain sm" />
       </div>
       {d.topic && <div className="sub" style={{ lineHeight: 1.5 }}>{d.topic}</div>}
+      {s.ref && <RefCard r={s.ref} borrowed={d.borrowed} />}
       {multi && <div className="caption" style={{ color: 'var(--c-amber)' }}>Have a native speaker read the {LANGS[s.language] || s.language} lines before filming.</div>}
 
       <div className="sechead" style={{ padding: '6px 0 0' }}><span>Hook options · pick one</span></div>
@@ -722,7 +722,32 @@ function ScriptDetail({ c, sid, onChange, onGone }: { c: ClientDoc; sid: number;
         <div className="sect">
           <div className="sechead" style={{ padding: 0 }}><span>Ends with</span></div><Inline value={d.cta || ''} onSave={v => put({ cta: v })} style={{ fontWeight: 600 }} />
           {d.notes && <><div className="sechead" style={{ padding: '8px 0 0' }}><span>Shooting notes</span></div><Inline value={d.notes} onSave={v => put({ notes: v })} multiline className="sub" /></>}
-          {d.borrowed && <><div className="sechead" style={{ padding: '8px 0 0' }}><span>From the reference</span></div><div className="sub" style={{ lineHeight: 1.5 }}>{d.borrowed}</div></>}
+          {d.borrowed && !s.ref && <><div className="sechead" style={{ padding: '8px 0 0' }}><span>From the reference</span></div><div className="sub" style={{ lineHeight: 1.5 }}>{d.borrowed}</div></>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RefCard({ r, borrowed }: { r: NonNullable<Script['ref']>; borrowed?: string }) {
+  const [watch, setWatch] = useState(false)
+  if (r.missing) return <div className="refreel"><div className="caption" style={{ fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' }}>Reference reel</div><span className="sub">This reel isn't in this Mac's index any more.</span><a href={r.url} target="_blank" rel="noreferrer" className="caption" style={{ fontWeight: 600 }}>Open on Instagram {I.ext({ width: 10, height: 10 })}</a></div>
+  return (
+    <div className="refreel">
+      <div style={{ display: 'flex', gap: 14 }}>
+        {watch && r.video_file && <video className="refvideo" src={url(`/api/video/${r.clinic}/${encodeURIComponent(r.video_file)}`)} controls autoPlay playsInline />}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="caption" style={{ fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' }}>Reference reel</div>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--c-tint)', lineHeight: 1.35 }}>{r.hook_en || r.hook_original || r.shortcode}</div>
+          <div className="caption" style={{ color: 'var(--c-sub)' }}>{[`@${r.clinic}`, r.format, r.hook_type, langName(r.language), r.duration ? fmt.dur(r.duration) : null, r.date ? fmt.date(r.date) : null].filter(Boolean).join(' · ')}</div>
+          <div style={{ display: 'flex', gap: 14, fontSize: 12.5, alignItems: 'baseline' }}><b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)} like-rate</b><span className="sub">{fmt.n(r.views)} views</span><span className="sub">{fmt.n(r.likes)} likes</span></div>
+          {r.summary && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>Why it worked:</b> {r.summary}</div>}
+          {borrowed && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>What this script takes from it:</b> {borrowed}</div>}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
+            {r.video_file && <button className={'btn plain sm' + (watch ? ' on' : '')} onClick={() => setWatch(!watch)}>{I.play({ width: 10, height: 10 })} {watch ? 'Hide video' : 'Watch'}</button>}
+            <a href={r.url} target="_blank" rel="noreferrer" className="btn plain sm">Instagram {I.ext({ width: 10, height: 10 })}</a>
+            <Link to={`/reels/${r.clinic}`} className="btn plain sm">Open in Reels</Link>
+          </div>
         </div>
       </div>
     </div>
