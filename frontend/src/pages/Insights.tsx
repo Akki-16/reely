@@ -85,7 +85,7 @@ export default function Insights() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div className="ic tint" style={{ width: 28, height: 28, borderRadius: 8 }}>{I.spark({ width: 14, height: 14 })}</div>
             <b style={{ fontSize: 14 }}>Ask Claude about {isAll ? 'these clinics' : 'this clinic'}</b>
-            <span className="caption">{!askOpen && asking ? `Answering… ${elapsed}s` : !askOpen && chat.length ? `${chat.length} message${chat.length === 1 ? '' : 's'} in this thread` : claudeOk ? 'Runs on your Claude plan via the CLI · thread kept per clinic · answers can take a minute' : 'Claude Code CLI not installed · see Models'}</span>
+            <span className="caption">{!askOpen && asking ? `Answering… ${elapsed}s` : !askOpen && chat.length ? `${chat.length} message${chat.length === 1 ? '' : 's'} in this thread` : claudeOk ? 'Runs on your Claude plan via the CLI · thread kept per clinic · answers can take a minute' : 'Claude Code CLI not installed · see Settings'}</span>
             <span className="spacer" />
             {askOpen && chat.length > 0 && !asking && <HoldButton className="btn plain sm" label="Clear thread" holdLabel="Hold…" ms={1500} onHold={async () => { await api.clearChat(handle); setChat([]) }} />}
             <button className="iconbtn" aria-label={askOpen ? 'Minimise' : 'Expand'} aria-expanded={askOpen} title={askOpen ? 'Minimise' : 'Expand'} onClick={() => setAskOpen(!askOpen)}>{askOpen ? I.up() : I.down()}</button>

@@ -56,7 +56,7 @@ class WhisperCpp:
         if not WHISPER_CLI.exists():
             raise RuntimeError(f"whisper-cli binary missing at {WHISPER_CLI}")
         if not self.model_path.exists():
-            raise RuntimeError(f"{size} is not downloaded — fetch it on the Models page")
+            raise RuntimeError(f"{size} is not downloaded — fetch it in Settings")
         self.vad_path = GGML_DIR / GGML_VAD["file"]
         self.threads = str(max(2, min(8, os.cpu_count() or 4)))
         self.gpu_seen = False

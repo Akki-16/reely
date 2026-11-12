@@ -53,7 +53,7 @@ export const api = {
   reimport: (h: string) => j(`/api/clinics/${h}/import`, { method: 'POST' }),
   startRun: (h: string, settings: Record<string, string> = {}) => j<{ run_id: number }>(`/api/clinics/${h}/run`, { method: 'POST', body: JSON.stringify({ settings }) }),
   more: (h: string, count: number | null) => j<{ run_id: number; top_n: number }>(`/api/clinics/${h}/more`, { method: 'POST', body: JSON.stringify({ count }) }),
-  runs: () => j<Run[]>('/api/runs'),
+  runs: (limit = 200) => j<Run[]>(`/api/runs?limit=${limit}`),
   queueAdd: (handles: string[], speciality: string | null) => j<{ added: any[] }>('/api/queue', { method: 'POST', body: JSON.stringify({ handles, speciality }) }),
   queue: () => j<{ items: any[]; lanes: Record<string, { holder: string | null; waiting: number }> }>('/api/queue'),
   moveRun: (id: number, direction: number) => j(`/api/runs/${id}/move`, { method: 'POST', body: JSON.stringify({ direction }) }),
@@ -109,7 +109,12 @@ export const api = {
 }
 
 export const fmt = {
-  n: (v: number | null | undefined) => v == null ? '—' : v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1) + 'K' : String(v),
+  /** Short counts for views and likes: 28m, 6.8m, 355k, 23.9k, 157. */
+  n: (v: number | null | undefined) => {
+    if (v == null) return '—'
+    const s = (x: number, d: number) => x.toFixed(d).replace(/\.0$/, '')
+    return v >= 1e6 ? s(v / 1e6, v >= 1e7 ? 0 : 1) + 'm' : v >= 1e3 ? s(v / 1e3, v >= 1e5 ? 0 : 1) + 'k' : String(Math.round(v))
+  },
   pct: (v: number | null | undefined) => v == null ? '—' : v.toFixed(2) + '%',
   bytes: (b: number) => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(0) + ' MB' : b > 0 ? Math.max(1, Math.round(b / 1e3)) + ' KB' : '0 KB',
   dur: (s: number | null | undefined) => s == null ? '—' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`,

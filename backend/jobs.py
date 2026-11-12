@@ -116,6 +116,15 @@ def move(run_id: int, direction: int) -> bool:
     return True
 
 
+def _short(v) -> str:
+    """Short count for notes: 28m, 6.8m, 355k, 23.9k, 157."""
+    if v is None:
+        return "—"
+    v = float(v)
+    f = lambda x, d: f"{x:.{d}f}".removesuffix(".0")
+    return f(v / 1e6, 0 if v >= 1e7 else 1) + "m" if v >= 1e6 else f(v / 1e3, 0 if v >= 1e5 else 1) + "k" if v >= 1e3 else str(round(v))
+
+
 def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -205,7 +214,7 @@ def _execute(run: Run):
             if not reels:
                 raise RuntimeError("no reels collected")
             summary = index.build_index(run.dir, reels)
-            run.end("scrape", t0, f"{summary['reels']} reels · median {summary['median_views']:.0f}")
+            run.end("scrape", t0, f"{summary['reels']} reels · median {_short(summary['median_views'])}")
         rows = index.load_index(run.dir)
         top_n = min(top_n, len(rows)) or top_n
         importer.write_meta(run.dir, top_n=top_n)

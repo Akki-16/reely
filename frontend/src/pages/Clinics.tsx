@@ -136,7 +136,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
             </div>
           </div>
           <div>
-            <div className="sechead">Defaults for new runs<Link to="/models" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>Change</Link></div>
+            <div className="sechead">Defaults for new runs<Link to="/settings" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>Change</Link></div>
             <div className="group">
               {[['Scrape', s.scrape_max && s.scrape_max !== '0' ? `Newest ${s.scrape_max}` : 'All reels'], ['Analyse', s.top_n === '100000' ? 'All scraped' : `Top ${s.top_n} by views`], ['Whisper model', `${s.whisper_model}${s.whisper_engine === 'whisper.cpp' ? ' · Metal' : ''}`], ['Video quality', s.video_quality === 'low' ? '360p · low' : 'Best available'], ['English translation', s.translate === '1' ? 'On' : 'Off'], ['Annotation', s.annotation_mode === 'cli' ? 'Claude CLI' : s.annotation_mode === 'handoff' ? 'Hand-off file' : 'Off']].map(([k, v]) => (
                 <div key={k} className="grow" style={{ padding: '11px 16px' }}><div className="fill" style={{ fontSize: 13 }}>{k}</div><div className="sub">{v}</div></div>

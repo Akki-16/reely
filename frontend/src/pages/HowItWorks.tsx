@@ -84,7 +84,7 @@ export default function HowItWorks() {
    ├─ top_reels_data.csv    the merged sheet
    └─ INSIGHTS.md           the write-up`}
             </div>
-            <div className="caption" style={{ padding: '8px 4px 0' }}>Browser login lives in <span className="mono">.browser-profile/</span> beside the clinic folders. Whisper models sit in the Hugging Face cache and are managed from <Link to="/models">Models</Link>.</div>
+            <div className="caption" style={{ padding: '8px 4px 0' }}>Browser login lives in <span className="mono">.browser-profile/</span> beside the clinic folders. Whisper models sit in the Hugging Face cache and are managed from <Link to="/settings">Settings</Link>.</div>
           </div>
         </section>
 

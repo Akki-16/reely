@@ -99,7 +99,7 @@ ENGINES = [
     {"id": "whisper.cpp",    "name": "whisper.cpp",    "device": "Metal GPU",
      "desc": "ggml on the Apple GPU through Metal. Several times faster on Apple Silicon; needs ggml-* models."},
 ]
-# Guidance shown on the Models page (kept here so the UI and the docs say the same thing).
+# Guidance shown on the Settings page (kept here so the UI and the docs say the same thing).
 MODEL_NOTES = {
     "families": "Rows without ggml- run on the CPU via faster-whisper (CTranslate2, Hugging Face cache); ggml- rows run on the "
                 "Metal GPU via whisper.cpp (ggml files in ~/Library/Application Support/Reely/models/ggml). Same Whisper weights, "

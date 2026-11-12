@@ -101,7 +101,7 @@ export function UpdateCard() {
   )
 }
 
-/** Models page section: version, automatic checks, manual check. */
+/** Settings page section: version, automatic checks, manual check. */
 export function UpdatesSection() {
   const u = useUpdater()
   if (!u) return null
@@ -124,6 +124,22 @@ export function UpdatesSection() {
             : <button className="btn plain sm" disabled={u.phase === 'checking' || u.phase === 'downloading'} onClick={() => u.check(true)}>Check now</button>}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Sidebar footer: a check button and the version line, in place of the old colour switch. */
+export function SidebarUpdate() {
+  const u = useUpdater()
+  if (!u) return null
+  const line = u.phase === 'checking' ? 'Checking…'
+    : u.phase === 'available' ? `Reely ${u.version} is available`
+    : u.phase === 'error' ? 'Could not check for updates'
+    : `Reely ${u.current || ''}${u.phase === 'none' ? ' · up to date' : ''}`
+  return (
+    <div className="sideupd">
+      <button className="btn plain sm" disabled={u.phase === 'checking' || u.phase === 'downloading'} onClick={() => u.check(true)} title={u.phase === 'error' ? u.error : undefined}>{I.refresh()} Check for updates</button>
+      <span className="caption" style={{ textAlign: 'center' }}>{line}</span>
     </div>
   )
 }

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Info, NumberPick, Toolbar } from '../App'
+import { useContext, useEffect, useState } from 'react'
+import { Info, NumberPick, Toolbar, Ui } from '../App'
+import type { Theme } from '../App'
 import { LANGS } from '../api'
 import type { Health } from '../App'
 import { api, fmt } from '../api'
@@ -50,13 +51,18 @@ export default function Models({ health, onHealth }: { health: Health; onHealth:
 
   return (
     <>
-      <Toolbar title="Models & Tools">
+      <Toolbar title="Settings">
         <span className="caption">Model cache · {cache ? fmt.bytes(cache.bytes) : '…'} used · {tools ? fmt.bytes(tools.free_bytes) : '…'} free</span>
       </Toolbar>
       <div className="main"><div className="main-inner">
         <div>
-          <h1 className="large">Models &amp; Tools</h1>
-          <div className="lead">Speech-to-text models on this Mac, plus the Claude CLI and the scraping browser.</div>
+          <h1 className="large">Settings</h1>
+          <div className="lead">Appearance, updates, speech-to-text models, the Claude CLI and the scraping browser.</div>
+        </div>
+
+        <div className="settings-top">
+          <AppearanceSection />
+          <UpdatesSection />
         </div>
 
         {health.viewOnly ? (
@@ -155,7 +161,6 @@ export default function Models({ health, onHealth }: { health: Health; onHealth:
               </div>
             </div>
           </div>
-          <UpdatesSection />
           <div>
             <div className="sechead">Run defaults &amp; storage</div>
             <div className="group">
@@ -189,6 +194,25 @@ function LangPick({ value, onChange }: { value: string; onChange: (v: string) =>
         {!known && <option value="__custom_v">{value}</option>}
         <option value="__custom">Custom…</option>
       </select>
+    </div>
+  )
+}
+
+/** Light, dark or follow macOS; moved here from the sidebar. */
+function AppearanceSection() {
+  const { theme, setTheme } = useContext(Ui)
+  const opts: { id: Theme; label: string }[] = [{ id: 'system', label: 'Match system' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]
+  return (
+    <div>
+      <div className="sechead">Appearance</div>
+      <div className="card pad appearance" role="radiogroup" aria-label="Appearance">
+        {opts.map(o => (
+          <button key={o.id} role="radio" aria-checked={theme === o.id} className={'apptile' + (theme === o.id ? ' on' : '')} onClick={() => setTheme(o.id)}>
+            <span className={'appthumb ' + o.id}><span /><span /><span /></span>
+            <span className="applabel">{o.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

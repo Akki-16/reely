@@ -912,7 +912,7 @@ def tools():
 @app.get("/api/browser/status")
 def browser_status():
     if not scrape.browsers_installed():
-        return {"logged_in": False, "installed": False, "error": "Chromium is not installed yet. Use Install browser on the Models page."}
+        return {"logged_in": False, "installed": False, "error": "Chromium is not installed yet. Use Install browser in Settings."}
     try:
         return {**scrape.session_status(), "installed": True}
     except Exception as e:

@@ -14,8 +14,8 @@ const COLS: { key: keyof Reel | 'no'; label: string; wrap?: boolean; num?: boole
   { key: 'clinic', label: 'Clinic' },
   { key: 'speciality', label: 'Speciality' },
   { key: 'like_rate', label: 'Like-rate', num: true, sort: 'like_rate', fmt: r => <b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)}</b> },
-  { key: 'views', label: 'Views', num: true, sort: 'views', fmt: r => r.views?.toLocaleString() },
-  { key: 'likes', label: 'Likes', num: true, fmt: r => r.likes?.toLocaleString() },
+  { key: 'views', label: 'Views', num: true, sort: 'views', fmt: r => <span title={r.views?.toLocaleString()}>{fmt.n(r.views)}</span> },
+  { key: 'likes', label: 'Likes', num: true, fmt: r => <span title={r.likes?.toLocaleString()}>{fmt.n(r.likes)}</span> },
   { key: 'outlier', label: 'vs median', num: true, fmt: r => r.outlier != null ? r.outlier.toFixed(1) + '×' : '' },
   { key: 'hook_en', label: 'Hook (English)', wrap: true },
   { key: 'hook_type', label: 'Hook type' },
@@ -64,6 +64,8 @@ export default function Reels() {
   const [saved, setSaved] = useState<string | null>(null)
   const [data, setData] = useState<{ reels: Reel[]; facets: Record<string, string[]>; total: number } | null>(null)
   const [sel, setSel] = useState<Reel | null>(null)
+  const [card, setCard] = useState<'open' | 'closing' | null>(null)   // table view: the slide-in reel card
+  const closeCard = () => { setCard('closing'); setTimeout(() => setCard(c => c === 'closing' ? null : c), 240) }
   const [sort, setSort] = useState('like_rate')
   const [minLR, setMinLR] = useState('')
   const [f, setF] = useState<Record<string, string>>({})
@@ -78,7 +80,7 @@ export default function Reels() {
   // a clinic outside the chosen speciality falls back to "all clinics in that speciality"
   useEffect(() => { if (spec && handle !== ALL && clinics.length && clinics.find(c => c.handle === handle)?.speciality !== spec) setHandle(ALL) }, [spec, clinics])
   useEffect(() => { localStorage.setItem('reely.reels.clinic', handle) }, [handle])
-  useEffect(() => { localStorage.setItem('reely.reels.view', view) }, [view])
+  useEffect(() => { localStorage.setItem('reely.reels.view', view); setCard(null) }, [view])
   useEffect(() => { localStorage.setItem('reely.reels.cols', JSON.stringify(cols)) }, [cols])
 
   useEffect(() => {
@@ -177,11 +179,12 @@ export default function Reels() {
                 <div key={r.shortcode} className={'grow click' + (sel?.shortcode === r.shortcode ? ' on' : '')} onClick={() => setSel(r)}>
                   {selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onClick={e => e.stopPropagation()} onChange={() => togglePick(r.shortcode)} />}
                   <div className="no">{i + 1}</div>
-                  <div className="lr" style={{ color: lrColor(r.like_rate) }}>{r.like_rate != null ? r.like_rate.toFixed(2) + '%' : '—'}</div>
-                  <div className="thumb" />
+                  {sort === 'views'
+                    ? <div className="lr" title={r.views?.toLocaleString()}>{fmt.n(r.views)}</div>
+                    : <div className="lr" style={{ color: lrColor(r.like_rate) }}>{r.like_rate != null ? r.like_rate.toFixed(2) + '%' : '—'}</div>}
                   <div className="fill">
                     <div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_original || r.caption?.split('\n')[0] || r.shortcode}</div>
-                    <div className="s">{[handle === ALL ? r.clinic : null, r.format, langName(r.language), fmt.dur(r.duration), fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}</div>
+                    <div className="s">{[handle === ALL ? r.clinic : null, r.format, langName(r.language), fmt.dur(r.duration), sort === 'views' ? null : fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}{sort === 'views' && r.like_rate != null && <> · <span style={{ color: lrColor(r.like_rate), fontWeight: 600 }}>{r.like_rate.toFixed(2)}% like-rate</span></>}</div>
                   </div>
                   {lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 13, height: 13 })}</span>}
                   {I.fwd({ className: 'chev', style: { color: sel?.shortcode === r.shortcode ? 'var(--c-tint)' : undefined } })}
@@ -196,14 +199,12 @@ export default function Reels() {
               <thead><tr>
                 <th style={{ width: 28 }}>{selecting && <input type="checkbox" className="rowcheck" aria-label="Select all" checked={!!data?.reels.length && picked.size === data.reels.length} onChange={e => setPicked(e.target.checked ? new Set((data?.reels || []).map(r => r.shortcode)) : new Set())} />}</th>
                 {visibleCols.map(c => <th key={c.key} className={c.sort ? 'sortable' : ''} onClick={() => c.sort && setSort(c.sort)} style={c.num ? { textAlign: 'right' } : undefined}>{c.label}{c.sort && sort === c.sort ? ' ↓' : ''}</th>)}
-                <th />
               </tr></thead>
               <tbody>
                 {data?.reels.map((r, i) => (
-                  <tr key={r.shortcode} className={sel?.shortcode === r.shortcode ? 'on' : ''} onClick={() => setSel(r)} onDoubleClick={e => { e.preventDefault(); window.getSelection()?.removeAllRanges(); sendToLibrary([r.shortcode]) }} title="Double-click to add to the hook library">
+                  <tr key={r.shortcode} className={sel?.shortcode === r.shortcode && card ? 'on' : ''} onClick={() => { setSel(r); setCard('open') }} onDoubleClick={e => { e.preventDefault(); window.getSelection()?.removeAllRanges(); sendToLibrary([r.shortcode]) }} title="Double-click to add to the hook library">
                     <td onClick={e => e.stopPropagation()} style={{ width: 28 }}><span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>{selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onChange={() => togglePick(r.shortcode)} />}{lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 12, height: 12 })}</span>}</span></td>
                     {visibleCols.map(c => <td key={c.key} className={(c.wrap ? 'wrap ' : '') + (c.num ? 'num' : '')} title={!c.wrap && typeof r[c.key as keyof Reel] === 'string' ? String(r[c.key as keyof Reel]) : undefined}>{c.fmt ? c.fmt(r, i) : String(r[c.key as keyof Reel] ?? '')}</td>)}
-                    <td><button className="btn plain sm" onClick={e => { e.stopPropagation(); setSel(r); setView('list') }} title="Open in list view">Open</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -211,6 +212,24 @@ export default function Reels() {
             {data?.reels.length === 0 && <div className="empty">No reels match.</div>}
           </div>
         )}
+        {view === 'table' && card && sel && (() => {
+          const list = data?.reels || []
+          const i = list.findIndex(x => x.shortcode === sel.shortcode)
+          const go = (d: number) => { const n = list[i + d]; if (n) setSel(n) }
+          return (
+            <div className={'slidecard' + (card === 'closing' ? ' out' : '')} onKeyDown={e => { if (e.key === 'Escape') closeCard(); if (e.key === 'ArrowDown') go(1); if (e.key === 'ArrowUp') go(-1) }} tabIndex={-1}>
+              <Inspector r={sel} onEdit={update} target={target} inLib={lib.has(sel.shortcode)} onLib={() => lib.has(sel.shortcode) ? removeFromLibrary(sel.shortcode) : sendToLibrary([sel.shortcode])}
+                onReplace={nr => { setData(d => d && { ...d, reels: d.reels.map(x => x.shortcode === nr.shortcode ? nr : x) }); setSel(s => s?.shortcode === nr.shortcode ? nr : s) }}
+                header={<div className="cardnav">
+                  <button className="iconbtn" aria-label="Previous reel" disabled={i <= 0} onClick={() => go(-1)}>{I.back({ width: 13, height: 13 })}</button>
+                  <button className="iconbtn" aria-label="Next reel" disabled={i < 0 || i >= list.length - 1} onClick={() => go(1)}>{I.fwd({ width: 13, height: 13 })}</button>
+                  <span className="caption">{i + 1} of {list.length}</span>
+                  <span className="spacer" />
+                  <button className="iconbtn" aria-label="Close card" onClick={closeCard}>✕</button>
+                </div>} />
+            </div>
+          )
+        })()}
       </div></div>
     </>
   )
@@ -256,7 +275,7 @@ async function copyText(t: string) {
 
 const HOOK_SECONDS = 5
 
-function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; onEdit: (code: string, p: Partial<Reel>) => Promise<void>; target: string; onReplace: (r: Reel) => void; inLib: boolean; onLib: () => void }) {
+function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }: { r: Reel; onEdit: (code: string, p: Partial<Reel>) => Promise<void>; target: string; onReplace: (r: Reel) => void; inLib: boolean; onLib: () => void; header?: React.ReactNode }) {
   const { clinics: allClinics, viewOnly } = useContext(Ui)
   const imported = allClinics.find(c => c.handle === r.clinic)?.imported
   const [dl, setDl] = useState<{ status: string; error: string | null } | null>(null)
@@ -341,6 +360,7 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; on
 
   return (
     <aside className="card inspector">
+      {header}
       <div key={r.shortcode} className="fade" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', gap: 14 }}>
           <div className="video" style={{ width: 112, height: 199, flexBasis: 112, position: 'relative' }}>
@@ -370,8 +390,8 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib }: { r: Reel; on
 
         <div className="group" style={{ boxShadow: 'none', background: 'var(--c-bg)' }}>
           <div className="kv"><span>Like-rate</span><b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)}</b></div>
-          <div className="kv"><span>Views</span><b>{r.views?.toLocaleString()}</b></div>
-          <div className="kv"><span>Likes</span><b>{r.likes?.toLocaleString()}</b></div>
+          <div className="kv"><span>Views</span><b title={r.views?.toLocaleString()}>{fmt.n(r.views)}</b></div>
+          <div className="kv"><span>Likes</span><b title={r.likes?.toLocaleString()}>{fmt.n(r.likes)}</b></div>
           {growth && <div className="kv"><span>Since {fmt.date(growth.since)}</span><b style={{ color: 'var(--c-green)', fontWeight: 600 }}>{growth.views != null ? `views ${growth.views >= 0 ? '+' : ''}${growth.views}%` : ''}{growth.views != null && growth.likes != null ? ' · ' : ''}{growth.likes != null ? `likes ${growth.likes >= 0 ? '+' : ''}${growth.likes}%` : ''}</b></div>}
           <div className="kv"><span>vs account median</span><b style={{ color: 'var(--c-tint)' }}>{r.outlier != null ? r.outlier.toFixed(0) + '×' : '—'}</b></div>
         </div>

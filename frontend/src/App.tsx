@@ -10,10 +10,10 @@ import Insights from './pages/Insights'
 import Models from './pages/Models'
 import HowItWorks from './pages/HowItWorks'
 import Library from './pages/Library'
-import { UpdateCard, UpdaterProvider } from './updater'
+import { SidebarUpdate, UpdateCard, UpdaterProvider } from './updater'
 
 export type Health = { claude: any; browser: { logged_in?: boolean; installed?: boolean; error?: string }; whisper: string; viewOnly?: boolean }
-type Theme = 'system' | 'light' | 'dark'
+export type Theme = 'system' | 'light' | 'dark'
 
 /** App-wide UI state: sidebar, and the speciality filter shared by every page. */
 export const Ui = createContext<{
@@ -22,7 +22,8 @@ export const Ui = createContext<{
   specialities: string[]; clinics: Clinic[]; refreshClinics: () => void
   toast: (msg: string, undo?: () => void) => void
   viewOnly: boolean
-}>({ sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false })
+  theme: Theme; setTheme: (t: Theme) => void
+}>({ sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false, theme: 'system', setTheme: () => {} })
 
 type ToastT = { id: number; msg: string; undo?: () => void }
 
@@ -81,13 +82,13 @@ export default function App() {
   const toggle = <button className="iconbtn" aria-label={sideOpen ? 'Hide sidebar' : 'Show sidebar'} title={sideOpen ? 'Hide sidebar' : 'Show sidebar'} onClick={() => setSideOpen(!sideOpen)}>{I.sidebar()}</button>
 
   return (
-    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly }}>
+    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly, theme, setTheme }}>
     <UpdaterProvider>
       <div className={'shell' + (sideOpen ? '' : ' noside')}>
         <aside className="side" aria-hidden={!sideOpen}>
           <div className="side-in">
-            <div className="side-top" data-tauri-drag-region>{toggle}</div>
-            <div className="brand" data-tauri-drag-region><b>Reely</b></div>
+            <div className="side-top" data-tauri-drag-region />
+            <div className="brand" data-tauri-drag-region><b>Reely</b><span className="spacer" data-tauri-drag-region />{toggle}</div>
             <div className="sec">Library</div>
             <NavLink to="/clinics" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.clinics()}Overview</NavLink>
             <NavLink to="/run" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.run()}Run</NavLink>
@@ -95,7 +96,7 @@ export default function App() {
             <NavLink to="/insights" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.insights()}Insights</NavLink>
             <NavLink to="/library" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.star()}Hook library</NavLink>
             <div className="sec" style={{ paddingTop: 16 }}>Setup</div>
-            <NavLink to="/models" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.models()}Models</NavLink>
+            <NavLink to="/settings" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.gear()}Settings</NavLink>
             <NavLink to="/how" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.help()}How it works</NavLink>
             <UpdateCard />
             <div className="status">
@@ -106,11 +107,7 @@ export default function App() {
                   <div><span className="dot" />Whisper {health.whisper || '…'}</div>
                   <div><span className={'dot ' + (health.browser?.logged_in ? '' : health.browser?.installed === false ? 'off' : 'warn')} />{health.browser?.logged_in ? 'Browser signed in' : health.browser?.installed === false ? 'Browser · not installed' : 'Browser · log in needed'}</div>
                 </>}
-              <div className="seg theme" role="group" aria-label="Appearance">
-                <button className={theme === 'system' ? 'on' : ''} onClick={() => setTheme('system')} title="Match system">{I.auto()}</button>
-                <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme('light')} title="Light">{I.sun()}</button>
-                <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme('dark')} title="Dark">{I.moon()}</button>
-              </div>
+              <SidebarUpdate />
             </div>
           </div>
         </aside>
@@ -126,7 +123,8 @@ export default function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/insights/:handle" element={<Insights />} />
             <Route path="/library" element={<Library />} />
-            <Route path="/models" element={<Models health={health} onHealth={setHealth} />} />
+            <Route path="/settings" element={<Models health={health} onHealth={setHealth} />} />
+            <Route path="/models" element={<Navigate to="/settings" replace />} />
             <Route path="/how" element={<HowItWorks />} />
           </Routes>
         </div>
