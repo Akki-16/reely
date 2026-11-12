@@ -1,6 +1,8 @@
 #!/bin/zsh
 # Build the small ffmpeg that Reely bundles for yt-dlp: remux only (joins Instagram's separate video and audio
-# streams with -c copy), no encoders or decoders, no network. Universal (arm64 + x86_64) so the Intel view-only
+# streams with -c copy), no encoders, no network. The VP9, H.264 and AAC decoders are there only so stream probing
+# can read the pixel format and frame size: without them the mp4 muxer writes an empty VP9 config box and an
+# unplayable file. Universal (arm64 + x86_64) so the Intel view-only
 # build can download videos too. Output: build/bin/ffmpeg. Source: the official ffmpeg.org release tarball.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,6 +20,7 @@ COMMON=(--disable-everything --disable-autodetect --disable-doc --disable-debug 
   --enable-demuxer=mov --enable-demuxer=matroska --enable-demuxer=aac
   --enable-muxer=mp4 --enable-muxer=mov --enable-muxer=ipod --enable-muxer=matroska --enable-muxer=webm
   --enable-parser=h264 --enable-parser=hevc --enable-parser=aac --enable-parser=vp9 --enable-parser=av1
+  --enable-decoder=vp9 --enable-decoder=h264 --enable-decoder=aac
   --enable-bsf=aac_adtstoasc --enable-bsf=vp9_superframe --enable-bsf=h264_mp4toannexb
   --enable-filter=null --enable-filter=anull --enable-filter=buffer --enable-filter=buffersink
   --enable-filter=abuffer --enable-filter=abuffersink --enable-filter=format --enable-filter=aformat
