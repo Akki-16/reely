@@ -287,12 +287,76 @@ def _instagram_baseline(handle: str) -> tuple[str, str] | None:
     return "\n".join(lines), f"in Reely · {lr:.2f}% median like-rate" if lr is not None else "in Reely"
 
 
+# ---------- reading files ----------
+# Claude's Read tool opens a PDF of up to 10 pages directly; longer ones need a page renderer this Mac may not have.
+# So every document's text is pulled out when it is added (macOS PDFKit for PDFs, textutil for Word and RTF) and the
+# brief reads that text; short PDFs are also read as pages so their charts and images still count.
+PDF_DIRECT_PAGES = 10
+_PDF_JS = """function run(argv) {
+  ObjC.import('PDFKit');
+  var d = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(argv[0]));
+  if (!d || d.isNil()) return JSON.stringify({pages: 0, text: ''});
+  var out = [];
+  for (var i = 0; i < d.pageCount; i++) { var pg = d.pageAtIndex(i); out.push('--- page ' + (i + 1) + ' ---\\n' + (ObjC.unwrap(pg.string) || '')); }
+  return JSON.stringify({pages: d.pageCount, text: out.join('\\n\\n')});
+}"""
+
+
+def extract_text(path: Path) -> tuple[str, int | None]:
+    """(text, pages) for a PDF, Word, RTF or text file; ('', None) when there is nothing to pull out."""
+    ext = path.suffix.lower()
+    try:
+        if ext == ".pdf":
+            r = subprocess.run(["osascript", "-l", "JavaScript", "-e", _PDF_JS, str(path)], capture_output=True, text=True, timeout=120)
+            d = json.loads(r.stdout.strip() or "{}")
+            try:
+                pages = int(d.get("pages") or 0) or None
+            except (TypeError, ValueError):
+                pages = None
+            return (d.get("text") or "").strip(), pages
+        if ext in (".docx", ".doc", ".rtf", ".rtfd", ".odt", ".pages", ".html", ".htm"):
+            r = subprocess.run(["textutil", "-convert", "txt", "-stdout", str(path)], capture_output=True, text=True, timeout=120)
+            return r.stdout.strip(), None
+        if ext in (".txt", ".md", ".csv"):
+            return path.read_text(errors="replace").strip(), None
+    except Exception as e:
+        print("extract", path.name, e)
+    return "", None
+
+
+def read_file(cid: int, s: dict) -> dict:
+    """Pull a file source's text into read/<id>.txt and describe it. Returns the fields to update on the source."""
+    p = folder(cid) / "files" / (s.get("value") or "")
+    kind = p.suffix.lstrip(".").upper() or "FILE"
+    if not p.is_file():
+        return {"status": "warn", "detail": "file missing"}
+    if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic"):
+        return {"status": "ok", "detail": "image", "pages": None}
+    text, pages = extract_text(p)
+    pg = f"{pages} page{'s' if pages != 1 else ''} · " if pages else ""
+    out = folder(cid) / "read" / f"{s['id']}.txt"
+    if len(text.replace("--- page", "").strip()) >= 80:
+        out.write_text(text)
+        return {"status": "ok", "detail": f"{kind} · {pg}text read", "pages": pages}
+    out.unlink(missing_ok=True)
+    if p.suffix.lower() == ".pdf":
+        if pages and pages > PDF_DIRECT_PAGES:
+            return {"status": "warn", "detail": f"PDF · {pg}scanned, no text · only short PDFs can be read as pages", "pages": pages}
+        return {"status": "ok", "detail": f"PDF · {pg}scanned · read as pages", "pages": pages}
+    return {"status": "ok", "detail": kind, "pages": pages}
+
+
 def read_sources(cid: int, only: str | None = None, force: bool = False):
     """Fetch every link source that has not been read yet (or just `only`). Updates each source's status."""
     doc = _load(cid)
     f = folder(cid)
     for s in doc["sources"]:
         if only and s["id"] != only:
+            continue
+        if s.get("kind") == "file":
+            if force or not s.get("text_at"):
+                _job(cid, note=f"Reading {s.get('label') or s.get('value')}…")
+                _set_source(cid, s["id"], **read_file(cid, s), text_at=_now())
             continue
         if s.get("kind") not in ("website", "social", "listing", "custom") or not (s.get("value") or "").strip():
             continue
@@ -354,8 +418,22 @@ def _sources_text(cid: int, doc: dict) -> tuple[str, int]:
             lines.append(f"## NOTE: {label}{tag}\n{v}\n"); n += 1
         elif kind == "file":
             p = f / "files" / v
+            tp = f / "read" / f"{s['id']}.txt"
             if p.exists():
-                lines.append(f"## FILE: {label}{tag} → Read the file `files/{v}`"); n += 1
+                try:
+                    pages = int(s.get("pages") or 0) or None
+                except (TypeError, ValueError):
+                    pages = None
+                if tp.exists() and p.suffix.lower() == ".pdf" and (pages or 99) <= PDF_DIRECT_PAGES:
+                    lines.append(f"## FILE: {label}{tag} → Read `files/{v}` (a {pages}-page PDF; its text is also in `read/{s['id']}.txt`; cite it as src 'PDF')")
+                elif tp.exists():
+                    lines.append(f"## FILE: {label}{tag} ({pages or 'several'} pages) → Read the extracted text `read/{s['id']}.txt` "
+                                 f"(do not open the original; it is too long for the Read tool; cite it as src 'PDF')")
+                elif p.suffix.lower() == ".pdf" and (pages or 0) > PDF_DIRECT_PAGES:
+                    lines.append(f"## FILE: {label}{tag} — a scanned {pages}-page PDF with no text layer; it cannot be read, use only its name")
+                else:
+                    lines.append(f"## FILE: {label}{tag} → Read the file `files/{v}`")
+                n += 1
         else:
             rp = f / "read" / f"{s['id']}.txt"
             if rp.exists():
@@ -824,6 +902,7 @@ def add_files(cid: int, body: FilesBody):
         shutil.copy2(src, dest / name)
         s = {"id": _new_id("s"), "kind": "file", "label": src.stem, "value": name, "size": (dest / name).stat().st_size,
              "person_id": body.person_id, "branch_id": body.branch_id, "status": "ok", "detail": src.suffix.lstrip('.').upper()}
+        s.update(read_file(cid, s), text_at=_now())
         doc["sources"].append(s); added.append(s)
     if not added:
         raise HTTPException(400, "None of those files could be found")
