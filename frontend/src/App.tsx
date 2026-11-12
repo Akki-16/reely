@@ -10,10 +10,14 @@ import Insights from './pages/Insights'
 import Models from './pages/Models'
 import HowItWorks from './pages/HowItWorks'
 import Library from './pages/Library'
+import Clients from './pages/Clients'
+import ClientRoom from './pages/ClientRoom'
 import { SidebarUpdate, UpdateCard, UpdaterProvider } from './updater'
 
 export type Health = { claude: any; browser: { logged_in?: boolean; installed?: boolean; error?: string }; whisper: string; viewOnly?: boolean }
 export type Theme = 'system' | 'light' | 'dark'
+/** What the people Acro makes scripts for are called (Settings › Names). */
+export type Words = { one: string; many: string }
 
 /** App-wide UI state: sidebar, and the speciality filter shared by every page. */
 export const Ui = createContext<{
@@ -23,7 +27,8 @@ export const Ui = createContext<{
   toast: (msg: string, undo?: () => void) => void
   viewOnly: boolean
   theme: Theme; setTheme: (t: Theme) => void
-}>({ sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false, theme: 'system', setTheme: () => {} })
+  words: Words; setWords: (w: Words) => void
+}>({ words: { one: 'Client', many: 'Clients' }, setWords: () => {},  sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false, theme: 'system', setTheme: () => {} })
 
 type ToastT = { id: number; msg: string; undo?: () => void }
 
@@ -39,6 +44,8 @@ export default function App() {
   const [spec, setSpecState] = useState(() => localStorage.getItem('reely.spec') || '')
   const [specialities, setSpecialities] = useState<string[]>([])
   const [clinics, setClinics] = useState<Clinic[]>([])
+  const [words, setWordsState] = useState<Words>(() => { try { return JSON.parse(localStorage.getItem('reely.words') || '') } catch { return { one: 'Client', many: 'Clients' } } })
+  const setWords = (w: Words) => { setWordsState(w); localStorage.setItem('reely.words', JSON.stringify(w)); api.putSettings({ client_one: w.one, client_many: w.many }).catch(() => {}) }
   const nav = useNavigate()
   const setSideOpen = (v: boolean) => { setSideOpenState(v); localStorage.setItem('reely.side', v ? 'open' : 'closed') }
   const setTheme = (t: Theme) => { setThemeState(t); localStorage.setItem('reely.theme', t); applyTheme(t) }
@@ -58,6 +65,7 @@ export default function App() {
     const load = async () => {
       try {
         const [t, s] = await Promise.all([api.tools(), api.settings()])
+        if (s.client_one && s.client_many) { const w = { one: s.client_one, many: s.client_many }; setWordsState(w); localStorage.setItem('reely.words', JSON.stringify(w)) }
         setHealth(h => ({ ...h, claude: t.claude, whisper: s.whisper_model, viewOnly: !!t.view_only, browser: { ...h.browser, installed: t.browser?.installed } }))
       } catch { /* server not up yet */ }
     }
@@ -82,19 +90,21 @@ export default function App() {
   const toggle = <button className="iconbtn" aria-label={sideOpen ? 'Hide sidebar' : 'Show sidebar'} title={sideOpen ? 'Hide sidebar' : 'Show sidebar'} onClick={() => setSideOpen(!sideOpen)}>{I.sidebar()}</button>
 
   return (
-    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly, theme, setTheme }}>
+    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly, theme, setTheme, words, setWords }}>
     <UpdaterProvider>
       <div className={'shell' + (sideOpen ? '' : ' noside')}>
         <aside className="side" aria-hidden={!sideOpen}>
           <div className="side-in">
             <div className="side-top" data-tauri-drag-region />
             <div className="brand" data-tauri-drag-region><b>Reely</b><span className="spacer" data-tauri-drag-region />{toggle}</div>
-            <div className="sec">Library</div>
+            <div className="sec">Research</div>
             <NavLink to="/clinics" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.clinics()}Overview</NavLink>
             <NavLink to="/run" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.run()}Run</NavLink>
             <NavLink to="/reels" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.reels()}Reels</NavLink>
             <NavLink to="/insights" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.insights()}Insights</NavLink>
             <NavLink to="/library" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.star()}Hook library</NavLink>
+            <div className="sec" style={{ paddingTop: 16 }}>Work</div>
+            <NavLink to="/clients" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.people()}{words.many}</NavLink>
             <div className="sec" style={{ paddingTop: 16 }}>Setup</div>
             <NavLink to="/settings" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.gear()}Settings</NavLink>
             <NavLink to="/how" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.help()}How it works</NavLink>
@@ -123,6 +133,10 @@ export default function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/insights/:handle" element={<Insights />} />
             <Route path="/library" element={<Library />} />
+            <Route path="/clients" element={<Clients />} />
+            <Route path="/clients/:id" element={<ClientRoom />} />
+            <Route path="/clients/:id/:tab" element={<ClientRoom />} />
+            <Route path="/clients/:id/:tab/:sid" element={<ClientRoom />} />
             <Route path="/settings" element={<Models health={health} onHealth={setHealth} />} />
             <Route path="/models" element={<Navigate to="/settings" replace />} />
             <Route path="/how" element={<HowItWorks />} />
@@ -168,12 +182,12 @@ export function SpecialityPicker({ allLabel = 'All specialities' }: { allLabel?:
 }
 
 /** Clinic filter: the clinics in the current speciality, plus an "all" entry. */
-export function ClinicPicker({ value, onChange, allValue = '_all', allLabel = 'All clinics', bold }: { value: string; onChange: (v: string) => void; allValue?: string | null; allLabel?: string; bold?: boolean }) {
+export function ClinicPicker({ value, onChange, allValue = '_all', allLabel = 'All accounts', bold }: { value: string; onChange: (v: string) => void; allValue?: string | null; allLabel?: string; bold?: boolean }) {
   const { spec, clinics } = useContext(Ui)
   const list = clinics.filter(c => !spec || c.speciality === spec)
   return (
     <div className="field">
-      <select value={value} onChange={e => onChange(e.target.value)} aria-label="Clinic" style={bold ? { fontWeight: 600 } : undefined}>
+      <select value={value} onChange={e => onChange(e.target.value)} aria-label="Reference account" style={bold ? { fontWeight: 600 } : undefined}>
         {allValue != null && <option value={allValue}>{allLabel}</option>}
         {list.map(c => <option key={c.handle} value={c.handle}>{c.handle}</option>)}
         {value && value !== allValue && !list.some(c => c.handle === value) && <option value={value}>{value}</option>}

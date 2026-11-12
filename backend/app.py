@@ -21,6 +21,9 @@ from pipeline import importer, scrape
 
 app = FastAPI(title="Reely")
 
+import clients  # noqa: E402
+app.include_router(clients.router)
+
 # The Tauri shell loads the UI from its own origin and calls this API on localhost.
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from config import VIEW_ONLY, VIEW_ONLY_MSG  # noqa: E402
@@ -60,6 +63,10 @@ def _first_run_import():
                 importer.write_meta(d, top_n=r["n"])
     except Exception as e:
         print("depth backfill skipped:", e)
+    try:
+        clients.init()
+    except Exception as e:
+        print("clients init skipped:", e)
     # runs left 'running'/'paused' by a previous process have no thread any more
     with db.tx() as c:
         c.execute("UPDATE runs SET status='stopped', finished=datetime('now'), stage=NULL WHERE status IN ('running','paused','queued')")

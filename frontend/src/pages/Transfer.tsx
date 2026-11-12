@@ -8,8 +8,8 @@ type Job = { status: string; kind?: string; done?: number; total?: number | null
 
 const PARTS: { key: 'transcripts' | 'insights' | 'chat' | 'videos'; label: string; desc: string }[] = [
   { key: 'transcripts', label: 'Transcripts', desc: 'Spoken text, timestamps and translations' },
-  { key: 'insights', label: 'Insights write-up', desc: 'INSIGHTS.md for each clinic' },
-  { key: 'chat', label: 'Ask Claude threads', desc: 'Questions and answers kept per clinic' },
+  { key: 'insights', label: 'Insights write-up', desc: 'INSIGHTS.md for each account' },
+  { key: 'chat', label: 'Ask Claude threads', desc: 'Questions and answers kept per account' },
   { key: 'videos', label: 'Videos', desc: 'The downloaded reels; by far the largest part' },
 ]
 
@@ -75,19 +75,19 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
   const start = async () => { setErr(null); try { await api.transferExport(sel, inc); setRunning(true) } catch (e: any) { setErr(e.message) } }
 
   return (
-    <Sheet title="Export clinics" onClose={onClose} busy={running}>
-      <div className="caption" style={{ lineHeight: 1.5 }}>Packs the chosen clinics into one <span className="mono">.reely</span> file in Downloads. Import it in Reely on another Mac to get the same reels, analysis and insights without scraping or downloading again.</div>
+    <Sheet title="Export reference accounts" onClose={onClose} busy={running}>
+      <div className="caption" style={{ lineHeight: 1.5 }}>Packs the chosen reference accounts into one <span className="mono">.reely</span> file in Downloads. Import it in Reely on another Mac to get the same reels, analysis and insights without scraping or downloading again.</div>
       {done ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <div className="ic green" style={{ width: 32, height: 32 }}>{I.check({ width: 15, height: 15 })}</div>
-            <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontSize: 13 }}>Exported {done.clinics.length} clinic{done.clinics.length === 1 ? '' : 's'} · {fmt.bytes(done.bytes)}</b><div className="caption" style={{ wordBreak: 'break-all' }}>{done.path.replace(/^\/Users\/[^/]+/, '~')}</div></div>
+            <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontSize: 13 }}>Exported {done.clinics.length} account{done.clinics.length === 1 ? '' : 's'} · {fmt.bytes(done.bytes)}</b><div className="caption" style={{ wordBreak: 'break-all' }}>{done.path.replace(/^\/Users\/[^/]+/, '~')}</div></div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn" onClick={onClose}>Done</button></div>
         </div>
       ) : <>
         <div>
-          <div className="sechead" style={{ padding: '0 2px 6px' }}><span>Clinics · {sel.length} of {clinics.length}</span>
+          <div className="sechead" style={{ padding: '0 2px 6px' }}><span>Accounts · {sel.length} of {clinics.length}</span>
             <button className="linkbtn" onClick={() => setSel(sel.length === clinics.length ? [] : clinics.map(c => c.handle))}>{sel.length === clinics.length ? 'Select none' : 'Select all'}</button></div>
           <div className="group checklist" style={{ boxShadow: 'none', background: 'var(--c-bg)', maxHeight: 210, overflow: 'auto' }}>
             {clinics.map(c => (
@@ -122,7 +122,7 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
             <span className="caption">About {fmt.bytes(total)}</span>
             <span className="spacer" />
             <button className="btn plain" onClick={onClose}>Cancel</button>
-            <button className="btn" onClick={start} disabled={!sel.length}>Export {sel.length} clinic{sel.length === 1 ? '' : 's'}</button>
+            <button className="btn" onClick={start} disabled={!sel.length}>Export {sel.length} account{sel.length === 1 ? '' : 's'}</button>
           </div>
         )}
       </>}
@@ -155,7 +155,7 @@ export function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: 
   const partChips = (inc: any) => [['Reel data', true], ['Transcripts', inc?.transcripts], ['Insights', inc?.insights], ['Ask threads', inc?.chat], ['Videos', inc?.videos]] as [string, boolean][]
 
   return (
-    <Sheet title="Import clinics" onClose={onClose} busy={running}>
+    <Sheet title="Import reference accounts" onClose={onClose} busy={running}>
       {done ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {done.clinics.map((c: any) => (
@@ -193,7 +193,7 @@ export function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: 
               <button className={mode === 'replace' ? 'on' : ''} onClick={() => setMode('replace')} disabled={running}>Replace</button>
             </div>
             <div className="caption" style={{ lineHeight: 1.5 }}>{mode === 'merge'
-              ? `${conflicts.length} clinic${conflicts.length === 1 ? ' is' : 's are'} already here. Merge keeps everything on this Mac and only adds what is missing; your edits win over the file's.`
+              ? `${conflicts.length} account${conflicts.length === 1 ? ' is' : 's are'} already here. Merge keeps everything on this Mac and only adds what is missing; your edits win over the file's.`
               : `Replace deletes ${conflicts.map((c: any) => c.handle).join(', ')} on this Mac, including videos and threads, and uses the file's copy instead.`}</div>
           </div>
         )}
@@ -201,7 +201,7 @@ export function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: 
         {running ? <Progress job={job} /> : (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn plain" onClick={onClose}>Cancel</button>
-            <button className={'btn' + (mode === 'replace' && conflicts.length ? ' danger' : '')} onClick={start} disabled={!sel.length}>Import {sel.length} clinic{sel.length === 1 ? '' : 's'}</button>
+            <button className={'btn' + (mode === 'replace' && conflicts.length ? ' danger' : '')} onClick={start} disabled={!sel.length}>Import {sel.length} account{sel.length === 1 ? '' : 's'}</button>
           </div>
         )}
       </>}

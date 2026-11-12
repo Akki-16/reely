@@ -4,6 +4,7 @@ import { ClinicPicker, SpecialityPicker, Toolbar, Ui } from '../App'
 import { api, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
 import type { Reel } from '../api'
 import { I } from '../icons'
+import SendTo from './SendTo'
 
 const ALL = '_all'
 type View = 'list' | 'table'
@@ -11,7 +12,7 @@ type View = 'list' | 'table'
 /** Every column the table can show. `wrap` = long text, `num` = right-aligned, `sort` = server sort key. */
 const COLS: { key: keyof Reel | 'no'; label: string; wrap?: boolean; num?: boolean; sort?: string; fmt?: (r: Reel, i: number) => React.ReactNode }[] = [
   { key: 'no', label: 'No', num: true, fmt: (_, i) => i + 1 },
-  { key: 'clinic', label: 'Clinic' },
+  { key: 'clinic', label: 'Account' },
   { key: 'speciality', label: 'Speciality' },
   { key: 'like_rate', label: 'Like-rate', num: true, sort: 'like_rate', fmt: r => <b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)}</b> },
   { key: 'views', label: 'Views', num: true, sort: 'views', fmt: r => <span title={r.views?.toLocaleString()}>{fmt.n(r.views)}</span> },
@@ -108,7 +109,7 @@ export default function Reels() {
     setSel(s => s?.shortcode === code ? r : s)
   }
 
-  const scopeLabel = handle === ALL ? (spec ? `${spec} clinics` : 'All clinics') : handle
+  const scopeLabel = handle === ALL ? (spec ? `${spec} accounts` : 'All accounts') : handle
   // the running number is always the first column; it is not part of the user's column list
   const visibleCols = [COLS[0], ...cols.filter(k => k !== 'no').map(k => COLS.find(c => c.key === k)!).filter(Boolean).filter(c => (c.key !== 'clinic' && c.key !== 'speciality') || handle === ALL)]
   const exportParams: Record<string, string> = {}
@@ -122,7 +123,7 @@ export default function Reels() {
       <Toolbar title="Reels">
         <SpecialityPicker />
         <ClinicPicker value={handle} onChange={setHandle} bold />
-        <button className={'btn plain' + (selecting ? ' on' : '')} onClick={() => { if (selecting) setPicked(new Set()); setSelecting(!selecting) }} title={selecting ? 'Stop selecting' : 'Pick reels to send to the hook library'}>{selecting ? 'Done' : 'Select'}</button>
+        <button className={'btn plain' + (selecting ? ' on' : '')} onClick={() => { if (selecting) setPicked(new Set()); setSelecting(!selecting) }} title={selecting ? 'Stop selecting' : 'Pick reels to send to the hook library or a client'}>{selecting ? 'Done' : 'Select'}</button>
         <div className="seg" role="group" aria-label="View">
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} title="List with inspector">{I.list()}</button>
           <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')} title="Table of all columns">{I.table()}</button>
@@ -165,7 +166,7 @@ export default function Reels() {
             <span>{picked.size} selected</span>
             <button className="linkbtn" style={{ color: '#fff', opacity: .85 }} onClick={() => setPicked(new Set((data?.reels || []).map(r => r.shortcode)))}>Select all {data?.reels.length}</button>
             <span className="spacer" />
-            <button className="btn plain sm" onClick={async () => { await sendToLibrary([...picked]); setPicked(new Set()) }}>{I.star({ width: 13, height: 13 })} Add to library</button>
+            <SendTo codes={[...picked]} onLibrary={async () => { await sendToLibrary([...picked]); setPicked(new Set()) }} onDone={() => setPicked(new Set())} />
             <button className="btn plain sm" onClick={() => setPicked(new Set())}>Clear</button>
           </div>
         )}
@@ -174,7 +175,7 @@ export default function Reels() {
           <div className="reels-layout" style={{ marginTop: -12 }}>
             <div className="group scrollcol">
               {!data && <div className="empty">Loading…</div>}
-              {data?.reels.length === 0 && <div className="empty">No reels match. Clear the filters or run a clinic first.</div>}
+              {data?.reels.length === 0 && <div className="empty">No reels match. Clear the filters or run a reference account first.</div>}
               {data?.reels.map((r, i) => (
                 <div key={r.shortcode} className={'grow click' + (sel?.shortcode === r.shortcode ? ' on' : '')} onClick={() => setSel(r)}>
                   {selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onClick={e => e.stopPropagation()} onChange={() => togglePick(r.shortcode)} />}
@@ -382,7 +383,7 @@ function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }: { r: 
               <Editable value={r.flag} placeholder="flag" onSave={v => onEdit(r.shortcode, { flag: v })} chip chipClass={flagKind === 'organic' ? 'pill green' : flagKind.includes('paid') ? 'pill red' : flagKind ? 'pill amber' : 'chip'} />
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 'auto', flexWrap: 'wrap' }}>
-              <button className={'btn plain sm' + (inLib ? ' on' : '')} onClick={onLib} title={inLib ? 'In the hook library · click to remove' : 'Add this reel to the hook library'}>{inLib ? <>{I.starFill({ width: 12, height: 12 })} In library</> : <>{I.star({ width: 12, height: 12 })} Add to library</>}</button>
+              <SendTo codes={[r.shortcode]} inLib={inLib} onLibrary={onLib} align="left" />
               <a href={r.url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, fontWeight: 600, display: 'inline-flex', gap: 4, alignItems: 'center' }}>Open on Instagram {I.ext()}</a>
             </div>
           </div>

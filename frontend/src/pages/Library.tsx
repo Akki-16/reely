@@ -112,7 +112,7 @@ function HookRow({ r, saved, onToggle, showNote, onNote }: { r: any; saved: bool
       </div>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
         <button className="starbtn" aria-label="Copy hook" title="Copy hook" onClick={async () => { await copyText(r.hook_en || r.hook_original); toast('Hook copied') }}>{I.copy({ width: 14, height: 14 })}</button>
-        <Link className="starbtn" to={`/reels/${r.clinic}`} title="Open the clinic's reels" aria-label="Open in Reels">{I.reels({ width: 14, height: 14 })}</Link>
+        <Link className="starbtn" to={`/reels/${r.clinic}`} title="Open the account's reels" aria-label="Open in Reels">{I.reels({ width: 14, height: 14 })}</Link>
         <a className="starbtn" href={r.url} target="_blank" rel="noreferrer" title="Open on Instagram" aria-label="Open on Instagram">{I.ext({ width: 13, height: 13 })}</a>
         <button className={'starbtn' + (saved ? ' on' : '')} aria-pressed={saved} aria-label={saved ? 'Remove from library' : 'Save to library'} title={saved ? 'Saved · click to remove' : 'Save to library'} onClick={onToggle}>{saved ? I.starFill({ width: 16, height: 16 }) : I.star({ width: 16, height: 16 })}</button>
       </div>

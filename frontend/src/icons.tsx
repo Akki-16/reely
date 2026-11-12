@@ -32,5 +32,11 @@ export const I = {
   refresh: (p = {}) => <svg {...P} width={13} height={13} {...p}><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5" /></svg>,
   history: (p = {}) => <svg {...P} width={14} height={14} {...p}><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" /></svg>,
   copy: (p = {}) => <svg {...P} width={11} height={11} {...p}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></svg>,
+  people: (p = {}) => <svg {...P} {...p}><circle cx="9" cy="8" r="3.2" /><path d="M3 19c.8-3.2 3.2-5 6-5s5.2 1.8 6 5" /><circle cx="17" cy="9" r="2.4" /><path d="M16.5 14.2c2.3.2 4 1.8 4.5 4.3" /></svg>,
+  send: (p = {}) => <svg {...P} width={13} height={13} {...p}><path d="M4 12l16-8-6 16-2.5-6.5z" /><path d="M11.5 13.5L20 4" /></svg>,
+  plus: (p = {}) => <svg {...P} width={13} height={13} strokeWidth={2.4} {...p}><path d="M12 5v14M5 12h14" /></svg>,
+  pdf: (p = {}) => <svg {...P} width={13} height={13} {...p}><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></svg>,
+  pencil: (p = {}) => <svg {...P} width={12} height={12} {...p}><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>,
+  trash: (p = {}) => <svg {...P} width={13} height={13} {...p}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>,
   ext: (p = {}) => <svg {...P} width={12} height={12} {...p}><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" /></svg>,
 }

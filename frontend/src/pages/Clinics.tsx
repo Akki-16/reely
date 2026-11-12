@@ -55,22 +55,22 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
         <SpecialityPicker />
         <ClinicPicker value={only} onChange={setOnly} allValue="" />
         <div className="seg">{(['all', 'done', 'running'] as const).map(f => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}</div>
-        <button className="btn plain" onClick={() => setSheet('import')} title="Bring in clinics exported from another Mac">{I.download()} Import</button>
-        <button className="btn plain" onClick={() => setSheet('export')} title="Pack clinics into one file for another Mac" disabled={!data?.clinics?.length}>{I.upload()} Export</button>
+        <button className="btn plain" onClick={() => setSheet('import')} title="Bring in reference accounts exported from another Mac">{I.download()} Import</button>
+        <button className="btn plain" onClick={() => setSheet('export')} title="Pack reference accounts into one file for another Mac" disabled={!data?.clinics?.length}>{I.upload()} Export</button>
       </Toolbar>
       {sheet === 'export' && <ExportSheet onClose={() => setSheet(null)} />}
       {sheet === 'import' && <ImportSheet onClose={() => setSheet(null)} onDone={load} />}
       <div className="main"><div className="main-inner">
         <div>
           <h1 className="large">{spec ? spec : 'Overview'}</h1>
-          <div className="lead">{t ? `${inSpec.length} clinic${inSpec.length === 1 ? '' : 's'}${spec ? ' in this speciality' : ' indexed'}. ${sum('reels_total').toLocaleString()} reels, ${sum('analysed')} analysed${spec ? '' : `, ${fmt.bytes(t.video_bytes)} on disk`}.` : 'Loading…'}</div>
+          <div className="lead">{t ? `${inSpec.length} reference account${inSpec.length === 1 ? '' : 's'}${spec ? ' in this speciality' : ' indexed'}. ${sum('reels_total').toLocaleString()} reels, ${sum('analysed')} analysed${spec ? '' : `, ${fmt.bytes(t.video_bytes)} on disk`}.` : 'Loading…'}</div>
         </div>
         {err && <div className="err">{err}</div>}
 
         {viewOnly ? (
           <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <div className="ic tint" style={{ width: 32, height: 32 }}>{I.info({ width: 15, height: 15 })}</div>
-            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import clinics here, and download the videos of imported reels from the Videos menu. To add clinics or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
+            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import reference accounts here, and download the videos of imported reels from the Videos menu. To add clinics or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
             <button className="btn plain" onClick={() => setSheet('import')}>{I.download()} Import</button>
           </div>
         ) : (
@@ -83,7 +83,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
           <div className="field" style={{ height: 34, width: 220 }}>
             <SpecInput value={newSpec} onChange={setNewSpec} options={specialities} placeholder="Speciality · pick or type" onEnter={add} />
           </div>
-          <button className="btn" onClick={add} disabled={busy || !handles.length}>{busy ? 'Starting…' : handles.length > 1 ? `Queue ${handles.length} clinics` : 'Add & Run'}</button>
+          <button className="btn" onClick={add} disabled={busy || !handles.length}>{busy ? 'Starting…' : handles.length > 1 ? `Queue ${handles.length} accounts` : 'Add & Run'}</button>
         </div>
         )}
 
@@ -93,7 +93,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
           <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b className="sub" style={{ color: 'var(--c-ink)' }}>Reels indexed</b><div className="ic tint" style={{ width: 30, height: 30 }}>{I.reels({ width: 15, height: 15 })}</div></div>
             <div className="big">{t ? sum('reels_total').toLocaleString() : '—'}</div>
-            <div className="caption">Across {inSpec.length} clinic{inSpec.length === 1 ? '' : 's'}{spec ? ` · ${spec}` : ''}</div>
+            <div className="caption">Across {inSpec.length} account{inSpec.length === 1 ? '' : 's'}{spec ? ` · ${spec}` : ''}</div>
           </div>
           <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b className="sub" style={{ color: 'var(--c-ink)' }}>Analysed</b><div className="ic green" style={{ width: 30, height: 30 }}>{I.check({ width: 15, height: 15 })}</div></div>
@@ -108,13 +108,13 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
         </div>
 
         <div>
-          <div className="sechead" style={{ textTransform: 'none', fontSize: 19, fontWeight: 700, color: 'var(--c-ink)', letterSpacing: '-.02em' }}>{spec ? `${spec} clinics` : 'Your clinics'}<Link to="/run" className="sub" style={{ color: 'var(--c-tint)', fontWeight: 500, fontSize: 13 }}>All runs</Link></div>
+          <div className="sechead" style={{ textTransform: 'none', fontSize: 19, fontWeight: 700, color: 'var(--c-ink)', letterSpacing: '-.02em' }}>{spec ? `${spec} reference accounts` : 'Reference accounts'}<Link to="/run" className="sub" style={{ color: 'var(--c-tint)', fontWeight: 500, fontSize: 13 }}>All runs</Link></div>
           <div className="group" style={{ overflow: 'visible' }}>
             {clinics.map(c => <ClinicRow key={c.handle} c={c} specialities={specialities} showSpec={!spec} onChange={load} onRun={onRun} />)}
-            {clinics.length === 0 && all.length > 0 && <div className="empty">No clinics match these filters.</div>}
+            {clinics.length === 0 && all.length > 0 && <div className="empty">No reference accounts match these filters.</div>}
             {!viewOnly && <div className="grow">
               <div className="ic" style={{ border: '1.5px dashed var(--c-fill2)', background: 'transparent', color: 'var(--c-muted)', fontSize: 20 }}>+</div>
-              <div className="fill"><div className="t" style={{ color: 'var(--c-muted)' }}>Add a clinic</div><div className="s" style={{ color: 'var(--c-muted)' }}>Paste one or several Instagram handles above and pick their speciality</div></div>
+              <div className="fill"><div className="t" style={{ color: 'var(--c-muted)' }}>Add a reference account</div><div className="s" style={{ color: 'var(--c-muted)' }}>Paste one or several Instagram handles above and pick their speciality</div></div>
             </div>}
           </div>
         </div>
@@ -276,7 +276,7 @@ function QueuePanel() {
   if (!q || q.items.length === 0) return null
   return (
     <div>
-      <div className="sechead"><span>Queue · {q.items.length} clinic{q.items.length === 1 ? '' : 's'}</span>
+      <div className="sechead"><span>Queue · {q.items.length} account{q.items.length === 1 ? '' : 's'}</span>
         <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500, display: 'flex', gap: 14 }}>
           {Object.entries(q.lanes).map(([k, v]) => <span key={k}><span className={'dot ' + (v.holder ? '' : 'off')} style={{ display: 'inline-block', marginRight: 6 }} />{LANE_LABEL[k]}: {v.holder || 'idle'}</span>)}
         </span>
@@ -296,7 +296,7 @@ function QueuePanel() {
           </div>
         ))}
       </div>
-      <div className="caption" style={{ padding: '6px 4px 0' }}>Clinics overlap: while one transcribes, the next downloads. Each lane serves one clinic at a time, so Instagram never sees more traffic than a single run. Order decides who gets a free lane first.</div>
+      <div className="caption" style={{ padding: '6px 4px 0' }}>Accounts overlap: while one transcribes, the next downloads. Each lane serves one account at a time, so Instagram never sees more traffic than a single run. Order decides who gets a free lane first.</div>
     </div>
   )
 }
@@ -324,7 +324,7 @@ function StoragePanel({ clinics, onChange }: { clinics: string[]; onChange: () =
         </label>
       </div>
       <div className="group">
-        {rows.length === 0 && <div className="grow"><div className="fill sub">No clinic folders yet</div></div>}
+        {rows.length === 0 && <div className="grow"><div className="fill sub">No account folders yet</div></div>}
         {rows.map(c => (
           <div key={c.handle} className="grow" style={{ padding: '10px 16px' }}>
             <div className="fill">
@@ -351,7 +351,7 @@ function FailuresSheet({ handle, active, onClose, onRun }: { handle: string; act
   const groups = open.reduce((a: Record<string, number>, r) => ({ ...a, [r.reason]: (a[r.reason] || 0) + 1 }), {})
   return (
     <Sheet title={`Failed reels · ${handle}`} onClose={onClose}>
-      <div className="caption" style={{ lineHeight: 1.5 }}>{open.length ? Object.entries(groups).map(([k, v]) => `${v} × ${k}`).join(' · ') : 'Nothing failed.'} Retry runs the clinic again with the existing scrape; every stage skips what is already done.</div>
+      <div className="caption" style={{ lineHeight: 1.5 }}>{open.length ? Object.entries(groups).map(([k, v]) => `${v} × ${k}`).join(' · ') : 'Nothing failed.'} Retry runs the account again with the existing scrape; every stage skips what is already done.</div>
       <div className="group" style={{ boxShadow: 'none', background: 'var(--c-bg)', maxHeight: 340, overflow: 'auto' }}>
         {(rows || []).map(r => (
           <div key={r.shortcode} className="grow" style={{ padding: '9px 14px', opacity: r.ignored ? .5 : 1 }}>

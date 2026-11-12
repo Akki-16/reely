@@ -26,6 +26,26 @@ export type Model = {
 export type ModelNotes = { families: string; measured: string; backups: string; cpu_rows: string }
 export type Engine = { id: string; name: string; device: string; desc: string; available: boolean }
 
+export type Person = { id: string; name: string; role?: string; languages?: string[]; on_camera?: string; note?: string; lead?: boolean; branches?: string[] }
+export type Branch = { id: string; name: string; area?: string; services?: string; cta?: string; maps?: string; reviews?: string; main?: boolean }
+export type Source = { id: string; kind: 'website' | 'social' | 'listing' | 'file' | 'note' | 'custom'; label: string; value: string; person_id?: string | null; branch_id?: string | null; status?: string; detail?: string; read_at?: string; size?: number }
+export type Brief = Record<string, any>
+export type BriefMeta = { drafted_at?: string; sources?: number; edited?: string[]; version?: number; locked?: boolean; history?: { at: string; what: string }[] }
+export type ClientJob = { kind?: string; section?: string; status: string; note?: string; error?: string | null } | null
+export type ClientDoc = {
+  id: number; name: string; speciality: string | null; city: string | null; languages: string[]; color: string | null
+  people: Person[]; branches: Branch[]; sources: Source[]; brief: Brief | null; brief_meta: BriefMeta; job?: ClientJob; created_at: string; updated_at: string
+}
+export type ClientSummary = { id: number; name: string; speciality: string | null; city: string | null; languages: string[]; color: string | null; lead: string | null; people: number; branches: number; has_brief: boolean; brief_locked: boolean; refs: number; scripts: number; writing: number; review: number; updated_at: string }
+export type ScriptLine = { t?: string; who?: string; line?: string; romanised?: string; english?: string; visual?: string }
+export type ScriptData = {
+  title?: string; topic?: string; borrowed?: string; duration_s?: number; on_camera?: string[]
+  hooks?: { line?: string; romanised?: string; english?: string; why?: string }[]; hook_pick?: number
+  beats?: ScriptLine[]; caption?: string; hashtags?: string[]; cta?: string
+  claims?: { claim?: string; check?: string }[]; checked?: number[]; compliance?: { ok?: boolean; note?: string }[]; notes?: string
+}
+export type Script = { id: number; client_id: number; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number }
+
 /** Backend origin. Empty in the browser (same origin); set by main.tsx inside the Tauri shell. */
 export let BASE = ''
 export function setBase(u: string) { BASE = u.replace(/\/$/, '') }
@@ -108,6 +128,28 @@ export const api = {
   browserInstallStatus: () => j<{ running: boolean; result: { ok: boolean; log: string } | null; installed: boolean }>('/api/browser/install/status'),
   settings: () => j<Record<string, string>>('/api/settings'),
   putSettings: (values: Record<string, string>) => j<Record<string, string>>('/api/settings', { method: 'PUT', body: JSON.stringify({ values }) }),
+  clients: () => j<ClientSummary[]>('/api/clients'),
+  clientNew: (data: { name: string; speciality?: string | null; city?: string | null; languages?: string[] }) => j<ClientDoc>('/api/clients', { method: 'POST', body: JSON.stringify(data) }),
+  client: (id: number) => j<ClientDoc>(`/api/clients/${id}`),
+  clientEdit: (id: number, data: Partial<ClientDoc>) => j<ClientDoc>(`/api/clients/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  clientDelete: (id: number) => j(`/api/clients/${id}`, { method: 'DELETE' }),
+  clientFiles: (id: number, paths: string[], person_id?: string | null) => j<ClientDoc>(`/api/clients/${id}/files`, { method: 'POST', body: JSON.stringify({ paths, person_id }) }),
+  clientRead: (id: number, source_id?: string) => j(`/api/clients/${id}/read`, { method: 'POST', body: JSON.stringify({ source_id }) }),
+  briefDraft: (id: number) => j(`/api/clients/${id}/brief/draft`, { method: 'POST' }),
+  briefRedraft: (id: number, section: string, ask = '') => j(`/api/clients/${id}/brief/redraft`, { method: 'POST', body: JSON.stringify({ section, ask }) }),
+  briefSave: (id: number, data: { brief?: Brief; section?: string; locked?: boolean }) => j<ClientDoc>(`/api/clients/${id}/brief`, { method: 'PUT', body: JSON.stringify(data) }),
+  briefPdf: (id: number) => j<{ path: string; pdf: boolean; note?: string }>(`/api/clients/${id}/brief/pdf`, { method: 'POST' }),
+  clientRefs: (id: number) => j<(Reel & { added: string; note: string; scripts: number })[]>(`/api/clients/${id}/refs`),
+  clientRefsAdd: (id: number, codes: string[]) => j<{ added: string[] }>(`/api/clients/${id}/refs`, { method: 'POST', body: JSON.stringify({ codes }) }),
+  clientRefsRemove: (id: number, codes: string[]) => j(`/api/clients/${id}/refs/remove`, { method: 'POST', body: JSON.stringify({ codes }) }),
+  sendCheck: (codes: string[]) => j<Record<string, number>>('/api/send-to/check', { method: 'POST', body: JSON.stringify({ codes }) }),
+  scripts: (id: number) => j<Script[]>(`/api/clients/${id}/scripts`),
+  scriptNew: (id: number, data: { shortcode?: string | null; person_id?: string | null; language: string; closeness: string; cast?: string; note?: string }) => j<{ id: number }>(`/api/clients/${id}/scripts`, { method: 'POST', body: JSON.stringify(data) }),
+  script: (sid: number) => j<Script>(`/api/scripts/${sid}`),
+  scriptEdit: (sid: number, data: { data?: ScriptData; status?: string; title?: string }) => j<Script>(`/api/scripts/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  scriptRetry: (sid: number) => j(`/api/scripts/${sid}/retry`, { method: 'POST' }),
+  scriptDelete: (sid: number) => j(`/api/scripts/${sid}`, { method: 'DELETE' }),
+  scriptPdf: (sid: number) => j<{ path: string; pdf: boolean; note?: string }>(`/api/scripts/${sid}/pdf`, { method: 'POST' }),
   reveal: (path = '') => j('/api/reveal?path=' + encodeURIComponent(path), { method: 'POST' }),
 }
 

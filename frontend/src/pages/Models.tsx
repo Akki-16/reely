@@ -65,6 +65,8 @@ export default function Models({ health, onHealth }: { health: Health; onHealth:
           <UpdatesSection />
         </div>
 
+        <NamesSection />
+
         {health.viewOnly ? (
           <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <div className="ic tint" style={{ width: 32, height: 32 }}>{I.info({ width: 15, height: 15 })}</div>
@@ -199,6 +201,37 @@ function LangPick({ value, onChange }: { value: string; onChange: (v: string) =>
 }
 
 /** Light, dark or follow macOS; moved here from the sidebar. */
+const NAME_PRESETS: { one: string; many: string }[] = [{ one: 'Client', many: 'Clients' }, { one: 'Hospital', many: 'Hospitals' }, { one: 'Clinic', many: 'Clinics' }]
+
+function NamesSection() {
+  const { words, setWords } = useContext(Ui)
+  const preset = NAME_PRESETS.find(p => p.one === words.one && p.many === words.many)
+  const [custom, setCustom] = useState(!preset)
+  const [draft, setDraft] = useState(words)
+  useEffect(() => setDraft(words), [words])
+  const commit = () => { const one = draft.one.trim(), many = draft.many.trim(); if (one && many && (one !== words.one || many !== words.many)) setWords({ one, many }) }
+  return (
+    <div>
+      <div className="sechead">Names</div>
+      <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div><b>What to call the people you make scripts for</b><div className="caption">Changes the sidebar, page titles and the Send to menu. Nothing is moved or renamed on disk.</div></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {NAME_PRESETS.map(p => <button key={p.one} className={'chipbtn' + (!custom && preset?.one === p.one ? ' on' : '')} style={{ padding: '7px 14px', fontSize: 13 }} onClick={() => { setCustom(false); setWords(p) }}>{p.many}</button>)}
+          <button className={'chipbtn' + (custom ? ' on' : '')} style={{ padding: '7px 14px', fontSize: 13 }} onClick={() => setCustom(true)}>Custom…</button>
+        </div>
+        {custom && <div className="grid2" style={{ gap: 12, maxWidth: 460 }}>
+          <label className="formrow"><span>One</span><div className="field"><input value={draft.one} onChange={e => setDraft({ ...draft, one: e.target.value })} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') commit() }} placeholder="Partner" /></div></label>
+          <label className="formrow"><span>Many</span><div className="field"><input value={draft.many} onChange={e => setDraft({ ...draft, many: e.target.value })} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') commit() }} placeholder="Partners" /></div></label>
+        </div>}
+        <div className="notebox" style={{ gap: 4 }}>
+          <span className="sub">Shows up as: sidebar <b>{words.many}</b> · button <b>New {words.one.toLowerCase()}</b> · menu <b>Send to › {words.many}</b></span>
+          <span className="caption">The Instagram accounts Reely scrapes are called <b>reference accounts</b>, so they don't get mixed up with the {words.many.toLowerCase()} you work for.</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AppearanceSection() {
   const { theme, setTheme } = useContext(Ui)
   const opts: { id: Theme; label: string }[] = [{ id: 'system', label: 'Match system' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]

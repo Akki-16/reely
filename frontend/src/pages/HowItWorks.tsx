@@ -6,12 +6,12 @@ import { I } from '../icons'
 
 /** The six stages, in the order a run executes them. */
 const STEPS = [
-  { n: 1, name: 'Scrape', tool: 'Playwright · saved login', out: 'reels_index.csv', icon: I.clinics, desc: 'Opens the clinic’s Reels grid in Reely’s own Chromium (logged in once), scrolls to the end and reads every tile’s play count and shortcode.' },
+  { n: 1, name: 'Scrape', tool: 'Playwright · saved login', out: 'reels_index.csv', icon: I.clinics, desc: 'Opens the account’s Reels grid in Reely’s own Chromium (logged in once), scrolls to the end and reads every tile’s play count and shortcode.' },
   { n: 2, name: 'Download', tool: 'yt-dlp · 360p', out: 'videos/<views>_<code>.mp4', icon: I.download, desc: 'Sorts the index by views and fetches only the top 100 at low quality, roughly 2 MB each. Files are named by view count so Finder sorts them the way you think.' },
   { n: 3, name: 'Transcribe', tool: 'Whisper · on this Mac (CPU or Metal GPU)', out: 'transcripts/<views>_<code>.json', icon: I.reels, desc: 'Listens to each video and writes the spoken words with timestamps. The first five seconds become the spoken hook.' },
   { n: 4, name: 'Translate', tool: 'Whisper translate task', out: 'text_en in each transcript', icon: I.spark, desc: 'Hindi, Telugu, Tamil and other non-English reels get an English rendering straight from the audio, which is more faithful than translating a garbled transcript.' },
   { n: 5, name: 'Annotate', tool: 'Claude Code CLI · your plan', out: 'annotations.json', icon: I.models, desc: 'Claude reads caption, hook and transcript for every reel and labels the hook type, format, call to action, and whether the reach looks organic or paid.' },
-  { n: 6, name: 'Insights', tool: 'Claude Code CLI', out: 'top_annotated.csv · INSIGHTS.md', icon: I.insights, desc: 'Everything is merged into one sheet per clinic, and Claude writes INSIGHTS.md: what the like-rate says, which formats worked, which hooks to borrow.' },
+  { n: 6, name: 'Insights', tool: 'Claude Code CLI', out: 'top_annotated.csv · INSIGHTS.md', icon: I.insights, desc: 'Everything is merged into one sheet per account, and Claude writes INSIGHTS.md: what the like-rate says, which formats worked, which hooks to borrow.' },
 ]
 
 export default function HowItWorks() {
