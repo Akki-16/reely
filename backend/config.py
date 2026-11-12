@@ -68,7 +68,7 @@ DEFAULTS = {
     "annotation_mode": "cli",        # cli | handoff | none
     "scroll_pause_ms": "1000",
     "download_pause_s": "3,7",       # legacy; downloads now use download_pace
-    "download_pace": "fast",         # fast | balanced | careful — starting pace; backs off on Instagram rate limits
+    "download_pace": "balanced",     # fast | balanced | careful — starting pace; backs off on Instagram rate limits
     "auto_clear_videos": "0",        # 1 = after a run, delete videos that are transcribed and annotated
 }
 

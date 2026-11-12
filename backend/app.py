@@ -81,7 +81,9 @@ def overview():
         vd = DATA_ROOT / c["handle"] / "videos"
         c["downloaded"] = sum(1 for _ in vd.glob("*.mp4")) if vd.is_dir() else 0
         c["remaining"] = max(0, (c["reels_total"] or 0) - c["downloaded"])
-        c["imported"] = importer.read_meta(DATA_ROOT / c["handle"]).get("imported")
+        meta = importer.read_meta(DATA_ROOT / c["handle"])
+        c["imported"] = meta.get("imported")
+        c["pending"] = int(meta.get("download_pending") or 0)   # reels a blocked download stage left for later
         from pipeline import failures as _fl
         c["failed"] = sum(1 for v in _fl.load(DATA_ROOT / c["handle"]).values() if not v.get("ignored"))
         c["missing_videos"] = db.one("SELECT COUNT(*) n FROM reels WHERE clinic=? AND (video_file IS NULL OR video_file='')", (c["handle"],))["n"]
@@ -653,10 +655,12 @@ def reel_download(shortcode: str):
 
     def work():
         try:
-            res = download.download_reels(d, [row], db.get_settings().get("video_quality", "low"), pause=(0, 0), force=True)
+            res = download.download_reels(d, [row], db.get_settings().get("video_quality", "low"), pause=(0, 0), force=True,
+                                          block_cooldowns=())   # one reel on demand: report a block at once
             vp = video_path(d, shortcode)
             if not vp:
-                raise RuntimeError((res.get("failures") or [{}])[0].get("error") or "download failed")
+                raise RuntimeError(download.BLOCKED_MSG if res.get("blocked") else
+                                   (res.get("failures") or [{}])[0].get("error") or "download failed")
             with db.tx() as c:
                 c.execute("UPDATE reels SET video_file=? WHERE shortcode=?", (vp.name, shortcode))
             state["status"] = "done"
@@ -702,14 +706,15 @@ def clinic_videos(handle: str, body: VideosBody):
     def work():
         try:
             res = download.download_reels(d, todo, st.get("video_quality", "low"), progress=prog, force=True,
-                                          should_stop=lambda: state.get("stop"), pace=st.get("download_pace", "fast"))
+                                          should_stop=lambda: state.get("stop"), pace=st.get("download_pace", "balanced"))
             with db.tx() as c:
                 for r in todo:
                     vp = video_path(d, r["shortcode"])
                     if vp:
                         c.execute("UPDATE reels SET video_file=? WHERE shortcode=?", (vp.name, r["shortcode"]))
             state.update({"status": "stopped" if state.get("stop") else "done", "ok": res["ok"], "failed": res["failed"],
-                          "note": f"{res['ok']} downloaded" + (f" · {res['failed']} failed" if res["failed"] else "")})
+                          "note": f"{res['ok']} downloaded" + (f" · {res['failed']} failed" if res["failed"] else "")
+                                  + (f" · {res['pending']} left, Instagram is limiting downloads" if res.get("blocked") else "")})
         except Exception as e:
             state.update({"status": "error", "note": str(e).splitlines()[0][:300] if str(e) else type(e).__name__})
     threading.Thread(target=work, daemon=True).start()

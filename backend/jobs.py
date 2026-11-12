@@ -225,10 +225,17 @@ def _execute(run: Run):
         t0 = run.begin("download")
         res = download.download_reels(run.dir, rows[:top_n], s.get("video_quality", "low"), None,
                                       progress=run.progress_for("download"), should_stop=run.stage_stop,
-                                      pace=s.get("download_pace", "fast"))
+                                      pace=s.get("download_pace", "balanced"))
         run.clear_skip()
         run.stages["download"]["extra"] = res
-        run.end("download", t0, f"{res['ok']} new · {res['skipped']} existing · {res['failed']} failed")
+        note = f"{res['ok']} new · {res['skipped']} existing · {res['failed']} failed"
+        if res.get("blocked"):
+            # Instagram walled off this network: carry on with the videos already here; the rest wait for a retry
+            note += f" · {res['pending']} left for later (Instagram limit)"
+            run.log(f"— Instagram is limiting downloads from this network; {res['pending']} reels stay pending. "
+                    "Continuing with what is downloaded. Use Download remaining on the clinic later, or switch network.")
+        importer.write_meta(run.dir, download_pending=res["pending"] if res.get("blocked") else 0)
+        run.end("download", t0, note)
         _release(run, "instagram")
         if run.stop_requested(): raise InterruptedError
 
@@ -338,9 +345,10 @@ def _refresh(run: Run):
     from pipeline.views_fmt import info_path
     codes = [c for c in old if info_path(run.dir, c)]
     res = download.refresh_metadata(run.dir, codes, progress=run.progress_for("download"), should_stop=run.stage_stop,
-                                    pace=s.get("download_pace", "fast"))
+                                    pace=s.get("download_pace", "balanced"))
     run.clear_skip()
-    run.end("download", t0, f"likes refreshed for {res['done']} reels · {res['failed']} failed")
+    run.end("download", t0, f"likes refreshed for {res['done']} reels · {res['failed']} failed"
+            + (f" · {res['pending']} not reached (Instagram limit)" if res.get("blocked") else ""))
     _release(run, "instagram")
     for st in ("transcribe", "translate", "annotate", "insights"):
         run.skip(st, "stats refresh only")

@@ -3,7 +3,7 @@ export type Clinic = {
   reels_total: number; analysed: number; median_views: number | null; top_views: number | null
   median_like_rate: number | null; last_run: string | null; status: string; speciality: string | null; downloaded?: number; remaining?: number
   missing_videos?: number; video_job?: { status: string; done: number; total: number | null; note: string; ok: number; failed: number } | null
-  failed?: number; waiting?: string | null; run_id?: number
+  failed?: number; pending?: number; waiting?: string | null; run_id?: number
   imported?: { from: string; at: string; videos: boolean; transcripts: boolean; insights: boolean; chat: boolean } | null
 }
 export type Reel = {

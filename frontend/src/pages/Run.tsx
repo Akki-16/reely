@@ -341,6 +341,9 @@ function StageRow({ n, name, desc, s, active }: { n: number; name: string; desc:
         {(active || done) && s.extra && typeof s.extra === 'object' && typeof (s.extra as any).speed_bps === 'number' && (
           <div className="caption" style={{ marginTop: 6 }}>{fmtSpeed((s.extra as any).speed_bps)} average · {fmt.bytes((s.extra as any).bytes || 0)} downloaded{(s.extra as any).pace ? ` · ${(s.extra as any).pace} pace` : ''}</div>
         )}
+        {done && s.extra && typeof s.extra === 'object' && (s.extra as any).blocked === true && (
+          <div className="caption" style={{ marginTop: 6, color: 'var(--c-amber)' }}>Instagram limited downloads from this network, so {(s.extra as any).pending} reels were left for later. The run continued with the videos it had. Use More → Download remaining on the clinic in a few hours, or on another network.</div>
+        )}
         {(active || done) && s.extra && typeof s.extra === 'object' && !Array.isArray(s.extra) && Object.keys(s.extra).length > 0 && Object.entries(s.extra).every(([k, v]) => /^[a-z]{2,3}$/.test(k) && k !== 'ok' && typeof v === 'number') && (
           <div className="caption" style={{ marginTop: 6 }}>{Object.entries(s.extra as Record<string, number>).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · ')}</div>
         )}

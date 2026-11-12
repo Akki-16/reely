@@ -257,6 +257,7 @@ function MoreMenu({ c, busy, onStart, onRun, viewOnly, onChange }: { c: Clinic; 
             <div className="caption" style={{ padding: '4px 8px 6px', lineHeight: 1.4 }}>For analysed reels with no video here, such as an import without videos. Transcripts and notes stay as they are.</div>
             {!viewOnly && <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0 2px' }} />}
           </>}
+          {!viewOnly && (c.pending || 0) > 0 && <button className="row" title="Reels a download stage left for later because Instagram was limiting this network" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Download remaining</span><span className="caption">{c.pending}</span></button>}
           {!viewOnly && (c.failed || 0) > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Retry failed</span><span className="caption">{c.failed}</span></button>}
           {!viewOnly && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.refreshStats(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Re-scrape view counts and re-fetch likes; no videos are downloaded"><span>Refresh stats</span><span className="caption">views + likes</span></button>}
         </div>
