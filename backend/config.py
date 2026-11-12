@@ -47,7 +47,8 @@ def _default_data_root() -> Path:
 
 DATA_ROOT = _default_data_root().resolve()
 DATA_ROOT.mkdir(parents=True, exist_ok=True)
-DB_PATH = (SUPPORT_DIR if FROZEN else APP_DIR) / "reely.sqlite"
+# REELY_DB points a test backend at a copy of another database
+DB_PATH = Path(os.environ["REELY_DB"]).expanduser() if os.environ.get("REELY_DB") else (SUPPORT_DIR if FROZEN else APP_DIR) / "reely.sqlite"
 BROWSER_PROFILE = DATA_ROOT / ".browser-profile"
 FRONTEND_DIST = APP_DIR / "frontend" / "dist"
 

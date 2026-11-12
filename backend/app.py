@@ -22,7 +22,9 @@ from pipeline import importer, scrape
 app = FastAPI(title="Reely")
 
 import clients  # noqa: E402
+import planner  # noqa: E402
 app.include_router(clients.router)
+app.include_router(planner.router)
 
 # The Tauri shell loads the UI from its own origin and calls this API on localhost.
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402

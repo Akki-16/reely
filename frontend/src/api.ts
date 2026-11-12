@@ -42,9 +42,12 @@ export type ScriptData = {
   title?: string; topic?: string; borrowed?: string; duration_s?: number; on_camera?: string[]
   hooks?: { line?: string; romanised?: string; english?: string; why?: string }[]; hook_pick?: number
   beats?: ScriptLine[]; caption?: string; hashtags?: string[]; cta?: string
-  claims?: { claim?: string; check?: string }[]; checked?: number[]; compliance?: { ok?: boolean; note?: string }[]; notes?: string
+  claims?: { claim?: string; check?: string }[]; checked?: number[]; compliance?: { ok?: boolean; note?: string }[]; notes?: string; pattern?: string
 }
-export type Script = { id: number; client_id: number; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number }
+export type Pattern = { id: string; name: string; description?: string; hook_style?: string; structure?: string; length_s?: number; on_camera?: string; works_because?: string; good_for?: string; examples?: string[]; example_hooks?: string[]; accounts?: string[]; median_like_rate?: number | null; count?: number }
+export type PlanItem = { id: string; topic: string; angle?: string; pattern_id?: string; pattern?: string; language: string; person_id?: string | null; on_camera?: string; refs?: string[]; why?: string; ok?: boolean; warn?: string; tick?: boolean; script_id?: number | null; script_status?: string; script_title?: string }
+export type Plan = { id: number; client_id: number; month: string; count: number; status: string; note?: string; error?: string | null; items: PlanItem[]; settings: { mix?: Record<string, number>; cast?: string; note?: string }; created_at: string }
+export type Script = { id: number; client_id: number; plan_id?: number | null; pattern?: string; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number }
 
 /** Backend origin. Empty in the browser (same origin); set by main.tsx inside the Tauri shell. */
 export let BASE = ''
@@ -144,11 +147,19 @@ export const api = {
   clientRefsRemove: (id: number, codes: string[]) => j(`/api/clients/${id}/refs/remove`, { method: 'POST', body: JSON.stringify({ codes }) }),
   sendCheck: (codes: string[]) => j<Record<string, number>>('/api/send-to/check', { method: 'POST', body: JSON.stringify({ codes }) }),
   scripts: (id: number) => j<Script[]>(`/api/clients/${id}/scripts`),
-  scriptNew: (id: number, data: { shortcode?: string | null; person_id?: string | null; language: string; closeness: string; cast?: string; note?: string }) => j<{ id: number }>(`/api/clients/${id}/scripts`, { method: 'POST', body: JSON.stringify(data) }),
+  scriptNew: (id: number, data: { topic?: string; shortcode?: string | null; person_id?: string | null; language: string; closeness: string; cast?: string; note?: string }) => j<{ id: number }>(`/api/clients/${id}/scripts`, { method: 'POST', body: JSON.stringify(data) }),
   script: (sid: number) => j<Script>(`/api/scripts/${sid}`),
   scriptEdit: (sid: number, data: { data?: ScriptData; status?: string; title?: string }) => j<Script>(`/api/scripts/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }),
   scriptRetry: (sid: number) => j(`/api/scripts/${sid}/retry`, { method: 'POST' }),
   scriptDelete: (sid: number) => j(`/api/scripts/${sid}`, { method: 'DELETE' }),
+  patterns: (speciality: string | null) => j<{ patterns: Pattern[]; reels: number; made_at: string | null; job: { status: string; note?: string; error?: string | null } | null; available: number }>('/api/patterns' + (speciality ? '?speciality=' + encodeURIComponent(speciality) : '')),
+  patternsMine: (speciality: string | null) => j('/api/patterns/mine', { method: 'POST', body: JSON.stringify({ speciality }) }),
+  plans: (id: number) => j<Plan[]>(`/api/clients/${id}/plans`),
+  planNew: (id: number, data: { month: string; count: number; mix: Record<string, number>; cast?: string; note?: string }) => j<Plan>(`/api/clients/${id}/plans`, { method: 'POST', body: JSON.stringify(data) }),
+  planEdit: (pid: number, items: PlanItem[]) => j<Plan>(`/api/plans/${pid}`, { method: 'PATCH', body: JSON.stringify({ items }) }),
+  planRetry: (pid: number) => j(`/api/plans/${pid}/retry`, { method: 'POST' }),
+  planDelete: (pid: number) => j(`/api/plans/${pid}`, { method: 'DELETE' }),
+  planGenerate: (pid: number) => j<{ queued: number }>(`/api/plans/${pid}/generate`, { method: 'POST' }),
   scriptPdf: (sid: number) => j<{ path: string; pdf: boolean; note?: string }>(`/api/scripts/${sid}/pdf`, { method: 'POST' }),
   reveal: (path = '') => j('/api/reveal?path=' + encodeURIComponent(path), { method: 'POST' }),
 }

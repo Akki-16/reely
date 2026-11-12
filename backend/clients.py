@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import threading
+import queue
 import time
 import urllib.parse
 import urllib.request
@@ -44,6 +45,16 @@ CREATE TABLE IF NOT EXISTS scripts (
   title TEXT, options TEXT DEFAULT '{}', data TEXT, error TEXT,
   created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS patterns (
+  speciality TEXT PRIMARY KEY, data TEXT, reels INTEGER, made_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL, month TEXT, count INTEGER, settings TEXT DEFAULT '{}',
+  status TEXT DEFAULT 'proposing',   -- proposing | ready | failed
+  note TEXT, error TEXT, items TEXT DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 SECTIONS = ["positioning", "people", "services", "branches", "audience", "questions", "voice", "say_never", "cta",
@@ -58,16 +69,47 @@ _jobs: dict[int, dict] = {}      # client id -> {"kind", "status", "note", "erro
 _jlock = threading.Lock()
 
 
+_q: "queue.Queue[int]" = queue.Queue()
+WORKERS = 2      # scripts written at the same time; a month's batch queues behind these
+
+
+def _worker():
+    while True:
+        sid = _q.get()
+        try:
+            r = db.one("SELECT status FROM scripts WHERE id=?", (sid,))
+            if r and r["status"] == "queued":
+                with db.tx() as c:
+                    c.execute("UPDATE scripts SET status='generating', updated_at=datetime('now') WHERE id=?", (sid,))
+                write_script(sid)
+        except Exception as e:
+            print("script worker:", e)
+        finally:
+            _q.task_done()
+
+
+def enqueue(sid: int):
+    _q.put(sid)
+
+
 def init():
     global _ready
     if _ready:
         return
     with db.tx() as c:
         c.executescript(SCHEMA)
-        # scripts a previous process was still writing have no thread any more
-        c.execute("UPDATE scripts SET status='failed', error='Reely was closed while this was being written' WHERE status='generating'")
+        cols = {r[1] for r in c.execute("PRAGMA table_info(scripts)")}
+        if "plan_id" not in cols:
+            c.execute("ALTER TABLE scripts ADD COLUMN plan_id INTEGER")
+        # scripts a previous process was writing or still had queued: start them again
+        c.execute("UPDATE scripts SET status='queued' WHERE status IN ('generating','queued')")
+        c.execute("UPDATE plans SET status='failed', error='Reely was closed while this plan was being proposed' WHERE status='proposing'")
     ROOT.mkdir(parents=True, exist_ok=True)
     _ready = True
+    for _ in range(WORKERS):
+        threading.Thread(target=_worker, daemon=True).start()
+    for r in db.rows("SELECT id FROM scripts WHERE status='queued' ORDER BY id"):
+        enqueue(r["id"])
 
 
 def _now():
@@ -441,7 +483,8 @@ SCRIPT_SHAPE = """{
  "cta": "the closing call to action",
  "claims": [{"claim": "every medical or factual claim in the script", "check": "what the doctor should confirm"}],
  "compliance": [{"ok": true, "note": "NMC / advertising check, one item per rule that applies"}],
- "notes": "shooting notes for the team: location, props, b-roll"
+ "notes": "shooting notes for the team: location, props, b-roll",
+ "pattern": "the name of the pattern this follows, if any"
 }"""
 
 
@@ -472,6 +515,20 @@ def write_script(sid: int):
         person = next((p for p in doc["people"] if p["id"] == s["person_id"]), None)
         cast = opts.get("cast") or ""
         ref_txt = "(none: write from the brief and the topic)"
+        pat = opts.get("pattern")
+        pat_txt = ""
+        if pat:
+            pat_txt = (f"\nPATTERN TO FOLLOW (mined from the best reels in this speciality):\n{pat.get('name')}: {pat.get('description') or ''}\n"
+                       f"Hook style: {pat.get('hook_style') or ''}\nStructure: {pat.get('structure') or ''}\nTypical length: {pat.get('length_s') or '?'}s\n")
+        elif not ref:
+            # a topic with no reference: offer the speciality's patterns and let Claude pick the closest one
+            import planner
+            pats = planner.get_patterns(doc.get("speciality"))
+            if pats:
+                pat_txt = "\nPATTERNS THAT WORK IN THIS SPECIALITY (pick the one that suits the topic best and follow it; say which in \"pattern\"):\n" + \
+                    "\n".join(f"- {p['name']}: {p.get('description') or ''} Hook style: {p.get('hook_style') or ''} Structure: {p.get('structure') or ''} "
+                              f"(median like-rate {p.get('median_like_rate') or '?'}%)" + "".join(f"\n    example hook: {h}" for h in (p.get('example_hooks') or [])[:2])
+                              for p in pats) + "\n"
         if ref:
             ref_txt = (f"@{ref['clinic']} · {ref.get('like_rate') or 0:.2f}% like-rate · {ref.get('views') or 0} views · "
                        f"{ref.get('duration') or '?'}s · format {ref.get('format') or '?'} · hook type {ref.get('hook_type') or '?'}\n"
@@ -488,14 +545,14 @@ CLIENT BRIEF:
 
 REFERENCE REEL (a proven reel from another account in this speciality):
 {ref_txt}
-
+{pat_txt}
 WRITE ONE SCRIPT
 - Speaking for: {person['name'] + ' (' + (person.get('role') or '') + ')' if person else 'the clinic'}{'; on camera: ' + person.get('on_camera') if person and person.get('on_camera') else ''}
 - Who appears: {cast or 'whoever suits the script, from the people above (actors are fine for skits)'}
 - How close to the reference: {CLOSENESS.get(opts.get('closeness') or 'structure')}
 - {_lang_rule(s['language'] or 'en')}
 - Give exactly 3 hook options; the beats start after the hook.
-- Match the reference's length unless the topic needs less.{(chr(10) + '- Extra instruction: ' + opts['note']) if opts.get('note') else ''}
+- Match the reference's length unless the topic needs less.{(chr(10) + '- Topic: ' + opts['topic']) if opts.get('topic') else ''}{(chr(10) + '- Extra instruction: ' + opts['note']) if opts.get('note') else ''}
 
 {RULES}
 
@@ -507,6 +564,8 @@ Reply with ONLY a JSON object of this shape:
             raise ValueError("Claude did not return a script")
         data["hook_pick"] = 0
         data["checked"] = []
+        if pat and not data.get("pattern"):
+            data["pattern"] = pat.get("name")
         with db.tx() as c:
             c.execute("UPDATE scripts SET status='draft', title=?, data=?, error=NULL, updated_at=datetime('now') WHERE id=?",
                       (data.get("title") or "Untitled script", json.dumps(data, ensure_ascii=False), sid))
@@ -579,7 +638,7 @@ def script_html(doc: dict, s: dict) -> str:
         f"<div class='hook{' pick' if i == pick else ''}'><b>{'★ ' if i == pick else ''}{_e(h.get('line'))}</b>"
         f"{'<div class=rom>' + _e(h.get('romanised')) + '</div>' if h.get('romanised') else ''}"
         f"{'<div class=en>' + _e(h.get('english')) + '</div>' if h.get('english') and h.get('english') != h.get('line') else ''}</div>"
-        for i, h in enumerate(d.get("hooks") or []))
+        for i, h in sorted(enumerate(d.get("hooks") or []), key=lambda x: x[0] != pick))
     beats = "".join(
         f"<tr><td class='small muted' style='white-space:nowrap'>{_e(b.get('t'))}</td><td class=small>{_e(b.get('who'))}</td>"
         f"<td>{_e(b.get('line'))}{'<div class=rom>' + _e(b.get('romanised')) + '</div>' if b.get('romanised') else ''}"
@@ -593,7 +652,7 @@ def script_html(doc: dict, s: dict) -> str:
 <h1>{_e(d.get('title') or s.get('title'))}</h1>
 <p class=muted>{_e(lang)} · about {_e(d.get('duration_s'))}s · {_e(person['name'] if person else '')}{' · on camera: ' + _e(', '.join(d.get('on_camera') or [])) if d.get('on_camera') else ''}</p>
 <p>{_e(d.get('topic'))}</p>
-<h2>Hook options</h2>{hooks}
+<h2>Hook · chosen first, then the alternatives</h2>{hooks}
 <h2>Script</h2><table><tr><th>Time</th><th>Who</th><th>Line</th><th>On screen</th></tr>{beats}</table>
 <h2>Claims for the doctor to confirm</h2><table>{claims}</table>
 {'<h2>Advertising check</h2><ul>' + comp + '</ul>' if comp else ''}
@@ -661,7 +720,7 @@ def _summary(r: dict) -> dict:
     lead = next((p for p in d.get("people") or [] if p.get("lead")), None)
     counts = db.one("SELECT (SELECT COUNT(*) FROM client_refs WHERE client_id=?) refs, "
                     "(SELECT COUNT(*) FROM scripts WHERE client_id=? AND status!='failed') scripts, "
-                    "(SELECT COUNT(*) FROM scripts WHERE client_id=? AND status='generating') writing, "
+                    "(SELECT COUNT(*) FROM scripts WHERE client_id=? AND status IN ('generating','queued')) writing, "
                     "(SELECT COUNT(*) FROM scripts WHERE client_id=? AND status='review') review", (r["id"],) * 4)
     meta = json.loads(r["brief_meta"] or "{}")
     return {"id": r["id"], "name": r["name"], "speciality": d.get("speciality"), "city": d.get("city"),
@@ -739,6 +798,7 @@ def delete_client(cid: int):
         c.execute("DELETE FROM clients WHERE id=?", (cid,))
         c.execute("DELETE FROM client_refs WHERE client_id=?", (cid,))
         c.execute("DELETE FROM scripts WHERE client_id=?", (cid,))
+        c.execute("DELETE FROM plans WHERE client_id=?", (cid,))
     shutil.rmtree(ROOT / str(cid), ignore_errors=True)
     return {"ok": True}
 
@@ -914,6 +974,7 @@ def send_check(body: CodesBody):
 
 # scripts
 class NewScript(BaseModel):
+    topic: str = ""
     shortcode: str | None = None
     person_id: str | None = None
     language: str = "en"
@@ -937,7 +998,7 @@ def scripts(cid: int):
         d = row.pop("data") or {}
         hooks = d.get("hooks") or []
         h = hooks[d.get("hook_pick") or 0] if hooks else {}
-        row.update(hook=h.get("english") or h.get("line"), duration_s=d.get("duration_s"))
+        row.update(hook=h.get("english") or h.get("line"), duration_s=d.get("duration_s"), pattern=d.get("pattern") or (row["options"].get("pattern") or {}).get("name"))
         out.append(row)
     return out
 
@@ -947,14 +1008,14 @@ def script_new(cid: int, body: NewScript):
     doc = _load(cid)
     if not doc["brief"]:
         raise HTTPException(400, "Draft this client's brief first; every script is written from it.")
-    opts = {"closeness": body.closeness, "cast": body.cast, "note": body.note}
+    opts = {"closeness": body.closeness, "cast": body.cast, "note": body.note, "topic": body.topic}
     person = body.person_id or next((p["id"] for p in doc["people"] if p.get("lead")), None)
     with db.tx() as c:
-        cur = c.execute("INSERT INTO scripts(client_id, shortcode, person_id, language, options, title) VALUES(?,?,?,?,?,?)",
-                        (cid, body.shortcode, person, body.language, json.dumps(opts), "Writing…"))
+        cur = c.execute("INSERT INTO scripts(client_id, shortcode, person_id, language, options, title, status) VALUES(?,?,?,?,?,?,'queued')",
+                        (cid, body.shortcode, person, body.language, json.dumps(opts), body.topic[:80] or "Writing…"))
         sid = cur.lastrowid
         c.execute("UPDATE clients SET updated_at=datetime('now') WHERE id=?", (cid,))
-    threading.Thread(target=write_script, args=(sid,), daemon=True).start()
+    enqueue(sid)
     return {"id": sid}
 
 
@@ -989,11 +1050,11 @@ def script_edit(sid: int, body: ScriptEdit):
 @router.post("/api/scripts/{sid}/retry")
 def script_retry(sid: int):
     s = script_get(sid)
-    if s["status"] == "generating":
+    if s["status"] in ("generating", "queued"):
         raise HTTPException(409, "Still writing")
     with db.tx() as c:
-        c.execute("UPDATE scripts SET status='generating', error=NULL, title='Writing…' WHERE id=?", (sid,))
-    threading.Thread(target=write_script, args=(sid,), daemon=True).start()
+        c.execute("UPDATE scripts SET status='queued', error=NULL WHERE id=?", (sid,))
+    enqueue(sid)
     return {"ok": True}
 
 

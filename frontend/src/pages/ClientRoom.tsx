@@ -1,11 +1,13 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { HoldButton, Toolbar, Ui } from '../App'
 import { api, fmt, isTauri, langName, LANGS, lrColor } from '../api'
-import type { Branch, Brief, ClientDoc, Person, Reel, Script, ScriptData, Source } from '../api'
+import type { Branch, Brief, ClientDoc, Person, Plan, Reel, Script, ScriptData, Source } from '../api'
 import { I } from '../icons'
 import { Avatar, SCRIPT_LANGS } from './Clients'
+import PlanTab from './PlanTab'
+import { ReviewShare, Teleprompter } from './ScriptTools'
 
 const PEOPLE_COLORS = ['linear-gradient(180deg,#C4B5FD,#7C3AED)', 'linear-gradient(180deg,#7DD3FC,#0284C7)', 'linear-gradient(180deg,#86EFAC,#16A34A)', 'linear-gradient(180deg,#FDBA74,#EA580C)', 'linear-gradient(180deg,#F9A8D4,#DB2777)']
 const BRANCH_COLORS = ['#D97706', '#0284C7', '#16A34A', '#DB2777', '#7C3AED', '#0D9488']
@@ -34,7 +36,7 @@ export default function ClientRoom() {
     if (!running) return
     const t = setInterval(load, 2500); return () => clearInterval(t)
   }, [running, id])
-  const writing = scripts.some(s => s.status === 'generating')
+  const writing = scripts.some(s => s.status === 'generating' || s.status === 'queued')
   useEffect(() => {
     if (!writing) return
     const t = setInterval(loadScripts, 4000); return () => clearInterval(t)
@@ -68,6 +70,7 @@ export default function ClientRoom() {
           <button role="tab" className={tab === 'context' || tab === 'brief' ? 'on' : ''} onClick={() => go(ctxTab)}>Context</button>
           <button role="tab" className={tab === 'refs' ? 'on' : ''} onClick={() => go('refs')}>References · {refs.length}</button>
           <button role="tab" className={tab === 'scripts' ? 'on' : ''} onClick={() => go('scripts')}>Scripts · {scripts.filter(s => s.status !== 'failed').length}{writing && <span className="pill amber" style={{ marginLeft: 8, padding: '1px 7px', fontSize: 10.5 }}>writing</span>}</button>
+          <button role="tab" className={tab === 'plan' ? 'on' : ''} onClick={() => go('plan')}>Plan</button>
         </div>
         {(tab === 'context' || tab === 'brief') && (
           <div className="ctxbar">
@@ -84,6 +87,7 @@ export default function ClientRoom() {
         {tab === 'context' && <Sources c={c} save={save} reload={load} />}
         {tab === 'brief' && <BriefView c={c} setC={setC} reload={load} />}
         {tab === 'refs' && <RefsView c={c} refs={refs} reload={loadRefs} onGenerate={r => setGen({ ref: r })} />}
+        {tab === 'plan' && <PlanTab c={c} onScripts={loadScripts} />}
         {tab === 'scripts' && <ScriptsView c={c} scripts={scripts} sid={sid ? Number(sid) : null} reload={loadScripts} onNew={() => setGen({ ref: null })} />}
       </div></div>
       {gen && <GenerateSheet c={c} refReel={gen.ref} onClose={() => setGen(null)} onMade={async sid => { setGen(null); await loadScripts(); loadRefs(); nav(`/clients/${id}/scripts/${sid}`) }} />}
@@ -537,7 +541,7 @@ function GenerateSheet({ c, refReel, onClose, onMade }: { c: ClientDoc; refReel:
   const [busy, setBusy] = useState(false)
   const go = async () => {
     setBusy(true)
-    try { const r = await api.scriptNew(c.id, { shortcode: refReel?.shortcode || null, person_id: person || null, language, closeness, cast, note }); onMade(r.id) }
+    try { const r = await api.scriptNew(c.id, refReel ? { shortcode: refReel.shortcode, person_id: person || null, language, closeness, cast, note } : { topic: note.trim(), person_id: person || null, language, closeness: 'loose', cast }); onMade(r.id) }
     catch (e: any) { setErr(e.message); setBusy(false) }
   }
   return createPortal(
@@ -554,6 +558,7 @@ function GenerateSheet({ c, refReel, onClose, onMade }: { c: ClientDoc; refReel:
         </div>}
         <label className="formrow"><span>Who appears <span className="caption">optional</span></span><div className="field"><input value={cast} onChange={e => setCast(e.target.value)} placeholder="e.g. doctor and a receptionist; actors for the couple" /></div></label>
         <label className="formrow"><span>{refReel ? 'Anything else' : 'Topic'} {refReel && <span className="caption">optional</span>}</span><textarea className="inline" rows={3} autoFocus={!refReel} value={note} onChange={e => setNote(e.target.value)} placeholder={refReel ? 'e.g. make it about low AMH; keep it under 40 seconds' : 'What should the reel be about? e.g. "Is IVF painful?" from the front-desk questions'} /></label>
+        {!refReel && <div className="caption">Claude picks the pattern that suits the topic from the best reels in {c.speciality || 'this speciality'}, then writes it for {c.name}.</div>}
         <div className="caption">Claude writes three hook options, the beats with {language === 'en' ? 'the lines' : 'each line in ' + (LANGS[language] || language) + ', romanised and in English'}, a caption, the claims for the doctor to confirm and an advertising check. It takes a minute or two.</div>
         {err && <div className="err">{err}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -566,22 +571,33 @@ function GenerateSheet({ c, refReel, onClose, onMade }: { c: ClientDoc; refReel:
 }
 
 /* ---------------- Scripts ---------------- */
-const STATUS: Record<string, [string, string]> = { generating: ['Writing…', 'amber'], draft: ['Draft', 'grey'], review: ['With the doctor', 'tint'], approved: ['Approved', 'green'], failed: ['Failed', 'red'] }
+const STATUS: Record<string, [string, string]> = { queued: ['Waiting…', 'amber'], generating: ['Writing…', 'amber'], draft: ['Draft', 'grey'], review: ['With the doctor', 'tint'], approved: ['Approved', 'green'], failed: ['Failed', 'red'] }
 
-function ScriptsView({ c, scripts, sid, reload, onNew }: { c: ClientDoc; scripts: Script[]; sid: number | null; reload: () => void; onNew: () => void }) {
+function ScriptsView({ c, scripts: all, sid, reload, onNew }: { c: ClientDoc; scripts: Script[]; sid: number | null; reload: () => void; onNew: () => void }) {
   const nav = useNavigate()
+  const [qs, setQs] = useSearchParams()
+  const [plans, setPlans] = useState<Plan[]>([])
+  useEffect(() => { api.plans(c.id).then(setPlans).catch(() => {}) }, [c.id, all.length])
+  const filter = qs.get('plan') || ''
+  const scripts = all.filter(s => !filter || (filter === 'single' ? !s.plan_id : String(s.plan_id) === filter))
   const current = sid ?? scripts[0]?.id ?? null
+  const monthOf = (p: Plan) => { const [y, m] = p.month.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long' }) }
   return (
     <div className="scriptlayout">
       <div className="group scrollcol" style={{ alignSelf: 'start' }}>
         <div className="grouphead"><b>Scripts</b><span className="spacer" /><button className="linkbtn" disabled={!c.brief} title={c.brief ? '' : 'Draft the brief first'} onClick={onNew}>+ From a topic</button></div>
+        {plans.length > 0 && <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--c-hair)' }}><div className="field" style={{ height: 28 }}><select value={filter} onChange={e => { const v = e.target.value; setQs(v ? { plan: v } : {}) }} style={{ fontSize: 12.5 }} aria-label="Show scripts from">
+          <option value="">All scripts · {all.length}</option>
+          {plans.map(p => <option key={p.id} value={String(p.id)}>{monthOf(p)} plan · {all.filter(s => s.plan_id === p.id).length}</option>)}
+          <option value="single">Single scripts · {all.filter(s => !s.plan_id).length}</option>
+        </select></div></div>}
         {scripts.length === 0 && <div className="emptyrow">No scripts yet. Use <b>Generate similar</b> on a reference, or write one from a topic.</div>}
         {scripts.map(s => (
           <button key={s.id} className={'srcrow' + (s.id === current ? ' on' : '')} onClick={() => nav(`/clients/${c.id}/scripts/${s.id}`)}>
             <span className="fill">
               <b style={{ fontSize: 13.5, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.title}</b>
               <span className="caption" style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--c-sub)' }}>{s.hook || s.ref_hook || ''}</span>
-              <span style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}><span className={'pill ' + (STATUS[s.status]?.[1] || 'grey')} style={{ padding: '1px 8px', fontSize: 11 }}>{STATUS[s.status]?.[0] || s.status}</span><span className="caption">{LANGS[s.language] || s.language} · {fmt.date(s.created_at)}</span></span>
+              <span style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, minWidth: 0 }}><span className={'pill ' + (STATUS[s.status]?.[1] || 'grey')} style={{ padding: '1px 8px', fontSize: 11 }}>{STATUS[s.status]?.[0] || s.status}</span><span className="caption" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{LANGS[s.language] || s.language}{s.pattern ? ' · ' + s.pattern : ''}</span></span>
             </span>
           </button>
         ))}
@@ -594,20 +610,23 @@ function ScriptsView({ c, scripts, sid, reload, onNew }: { c: ClientDoc; scripts
 function ScriptDetail({ c, sid, onChange, onGone }: { c: ClientDoc; sid: number; onChange: () => void; onGone: () => void }) {
   const { toast } = useContext(Ui)
   const [s, setS] = useState<Script | null>(null)
+  const [tele, setTele] = useState(false)
+  const [review, setReview] = useState(false)
   const [show, setShow] = useState<{ rom: boolean; en: boolean }>(() => { try { return JSON.parse(localStorage.getItem('reely.script.show') || '') } catch { return { rom: true, en: true } } })
   const load = () => api.script(sid).then(setS).catch(() => onGone())
   useEffect(() => { load() }, [sid])
   useEffect(() => {
-    if (s?.status !== 'generating') return
+    if (s?.status !== 'generating' && s?.status !== 'queued') return
     const t = setInterval(load, 3000); return () => clearInterval(t)
   }, [s?.status])
   useEffect(() => { localStorage.setItem('reely.script.show', JSON.stringify(show)) }, [show])
   if (!s) return <div className="card pad"><span className="caption">Loading…</span></div>
 
-  if (s.status === 'generating') return (
+  if (s.status === 'generating' || s.status === 'queued') return (
     <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}><span className="ic spinner" style={{ width: 18, height: 18, flexBasis: 18 }}><span style={{ width: 16, height: 16 }} /></span><b style={{ fontSize: 16 }}>Claude is writing this script</b></span>
-      <span className="sub">Usually one to three minutes. You can leave this page; it keeps going.</span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}><span className="ic spinner" style={{ width: 18, height: 18, flexBasis: 18 }}><span style={{ width: 16, height: 16 }} /></span><b style={{ fontSize: 16 }}>{s.status === 'queued' ? 'Waiting its turn' : 'Claude is writing this script'}</b></span>
+      <span className="sub">{s.status === 'queued' ? 'Two scripts are written at a time; this one starts when a slot frees up.' : 'Usually one to three minutes.'} You can leave this page; it keeps going.</span>
+      {s.title && s.title !== 'Writing…' && <span className="caption">{s.title}</span>}
     </div>
   )
   if (s.status === 'failed' || !s.data) return (
@@ -631,16 +650,20 @@ function ScriptDetail({ c, sid, onChange, onGone }: { c: ClientDoc; sid: number;
 
   return (
     <div className="card scriptcard fade">
+      {tele && <Teleprompter s={s} onClose={() => setTele(false)} />}
+      {review && <ReviewShare s={s} onClose={() => setReview(false)} onSaved={n => { setS(n); onChange() }} />}
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Inline value={d.title || s.title} onSave={v => put({ title: v })} style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.02em' }} />
           <div className="sub" style={{ marginTop: 4 }}>{[LANGS[s.language] || s.language, d.duration_s ? `about ${d.duration_s}s` : null, person ? `in ${person.name}'s voice` : 'for the clinic', (d.on_camera || []).length ? 'on camera: ' + d.on_camera!.join(', ') : null].filter(Boolean).join(' · ')}</div>
+          {(d.pattern || s.pattern) && <div className="caption" style={{ marginTop: 3 }}>Pattern: {d.pattern || s.pattern}</div>}
           {s.shortcode && <div className="caption" style={{ marginTop: 3 }}>From @{s.ref_clinic || '…'}'s reel “{(s.ref_hook || '').slice(0, 70)}{(s.ref_hook || '').length > 70 ? '…' : ''}”</div>}
         </div>
         <div className="seg">{['draft', 'review', 'approved'].map(k => <button key={k} className={s.status === k ? 'on' : ''} onClick={() => setStatus(k)}>{STATUS[k][0]}</button>)}</div>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn sm" onClick={async () => { try { const r = await api.scriptPdf(sid); toast(r.pdf ? `Saved ${r.path.split('/').pop()} to Downloads` : r.note || 'Saved') } catch (e: any) { toast(e.message) } }}>{I.pdf()} Share as PDF</button>
+        <button className="btn sm" onClick={() => setReview(true)}>{I.pdf()} Review and share</button>
+        <button className="btn plain sm" onClick={() => setTele(true)}>{I.play({ width: 11, height: 11 })} Teleprompter</button>
         {multi && <><button className={'btn plain sm' + (show.rom ? ' on' : '')} onClick={() => setShow({ ...show, rom: !show.rom })}>Romanised</button><button className={'btn plain sm' + (show.en ? ' on' : '')} onClick={() => setShow({ ...show, en: !show.en })}>English</button></>}
         <span className="spacer" />
         <HoldButton label="Delete script" ms={1500} onHold={async () => { await api.scriptDelete(sid); onGone() }} className="btn plain sm" />
