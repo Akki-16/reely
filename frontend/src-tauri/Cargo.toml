@@ -1,6 +1,6 @@
 [package]
 name = "reely"
-version = "0.3.3"
+version = "0.3.4"
 description = "Reely — Instagram reel research for clinics"
 authors = ["Acro"]
 edition = "2021"
