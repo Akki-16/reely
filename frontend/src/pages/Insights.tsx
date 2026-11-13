@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt } from '../api'
+import { label } from '../categoryInfo'
 import { I } from '../icons'
 
 const ALL = '_all'
@@ -120,7 +121,7 @@ export default function Insights() {
                   : <>Inside the organic band. <strong style={{ color: '#fff' }}>Views and like-rate agree here, so both rankings are useful.</strong></>}
               </div>
               {byFlag.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '6px 18px', fontSize: 12.5, color: '#D1D1D6', background: 'rgba(255,255,255,.07)', borderRadius: 12, padding: '12px 16px' }}>
-                {byFlag.map(([k, v], i) => <><span key={k + 'k'}>{k}</span><span key={k + 'v'} style={{ textAlign: 'right', color: i === 0 ? '#fff' : undefined, fontWeight: i === 0 ? 600 : 400 }}>{v.toFixed(3)}%</span></>)}
+                {byFlag.map(([k, v], i) => <><span key={k + 'k'}>{label(k)}</span><span key={k + 'v'} style={{ textAlign: 'right', color: i === 0 ? '#fff' : undefined, fontWeight: i === 0 ? 600 : 400 }}>{v.toFixed(3)}%</span></>)}
               </div>}
             </div>
 
@@ -131,7 +132,7 @@ export default function Insights() {
                   {formats.length === 0 && <div className="caption">Annotate the account to see formats.</div>}
                   {formats.map(([k, v]) => (
                     <div key={k} style={{ display: 'grid', gridTemplateColumns: '150px minmax(0,1fr) 30px', gap: 12, alignItems: 'center', fontSize: 13 }}>
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k}</span>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label(k)}</span>
                       <div className="bar" style={{ height: 8 }}><div style={{ width: `${(v / maxF) * 100}%`, background: /pageant|celeb|kbc/.test(k) ? '#FEBC2E' : /influencer/.test(k) ? '#8B6FEA' : /milestone|silent/.test(k) ? 'var(--c-fill2)' : 'var(--c-tint)' }} /></div>
                       <b style={{ textAlign: 'right' }}>{v}</b>
                     </div>
@@ -144,10 +145,10 @@ export default function Insights() {
                   {(s?.top_like_rate || []).slice(0, 6).map((r: any) => (
                     <div key={r.shortcode} className="grow">
                       <div className="lr" style={{ color: 'var(--c-green)' }}>{r.like_rate_pct?.toFixed(2)}%</div>
-                      <div className="fill"><div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_spoken_original}</div><div className="s">{[isAll ? nameOf(r.clinic) : null, r.format, fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}</div></div>
+                      <div className="fill"><div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_spoken_original}</div><div className="s">{[isAll ? nameOf(r.clinic) : null, label(r.format), fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}</div></div>
                     </div>
                   ))}
-                  {hooks.length > 0 && <div className="grow" style={{ flexWrap: 'wrap', gap: 6 }}><span className="caption" style={{ width: '100%' }}>Hook types</span>{hooks.map(([k, v]) => <span key={k} className="chip">{k} · {v}</span>)}</div>}
+                  {hooks.length > 0 && <div className="grow" style={{ flexWrap: 'wrap', gap: 6 }}><span className="caption" style={{ width: '100%' }}>Hook types</span>{hooks.map(([k, v]) => <span key={k} className="chip">{label(k)} · {v}</span>)}</div>}
                 </div>
               </div>
             </div>

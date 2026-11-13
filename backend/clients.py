@@ -363,7 +363,8 @@ def read_sources(cid: int, only: str | None = None, force: bool = False):
             continue
         if s.get("kind") not in ("website", "social", "listing", "custom") or not (s.get("value") or "").strip():
             continue
-        if s.get("read_at") and not force and not only:
+        # an Instagram account that wasn't in Reely yet is checked again each time: it may have been scraped since
+        if s.get("read_at") and not force and not only and s.get("status") != "todo":
             continue
         v = s["value"].strip()
         out = f / "read" / f"{s['id']}.txt"

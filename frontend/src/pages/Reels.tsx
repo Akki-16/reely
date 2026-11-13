@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom'
 import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
 import type { Reel } from '../api'
+import { label } from '../categoryInfo'
 import { I } from '../icons'
 import SendTo from './SendTo'
 
@@ -149,7 +150,7 @@ export default function Reels() {
         {showFilters && (
           <div className="card rise" style={{ padding: '12px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {(['format', 'hook_type', 'language', 'flag'] as const).map(k => (
-              <div className="field" key={k}><select value={f[k] || ''} onChange={e => setF({ ...f, [k]: e.target.value })}><option value="">{k.replace('_', ' ')} · any</option>{(data?.facets[k] || []).map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+              <div className="field" key={k}><select value={f[k] || ''} onChange={e => setF({ ...f, [k]: e.target.value })}><option value="">{k.replace('_', ' ')} · any</option>{(data?.facets[k] || []).map(v => <option key={v} value={v}>{k === 'language' ? langName(v) || v : label(v)}</option>)}</select></div>
             ))}
             <div className="field" style={{ width: 150 }}><span className="caption">Like-rate ≥</span><input value={minLR} onChange={e => setMinLR(e.target.value)} placeholder="0.25" style={{ width: 50 }} /></div>
             <div className="spacer" />
@@ -187,7 +188,7 @@ export default function Reels() {
                     : <div className="lr" style={{ color: lrColor(r.like_rate) }}>{r.like_rate != null ? r.like_rate.toFixed(2) + '%' : '—'}</div>}
                   <div className="fill">
                     <div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_original || r.caption?.split('\n')[0] || r.shortcode}</div>
-                    <div className="s">{[handle === ALL ? nameOf(r.clinic) : null, r.format, langName(r.language), fmt.dur(r.duration), sort === 'views' ? null : fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}{sort === 'views' && r.like_rate != null && <> · <span style={{ color: lrColor(r.like_rate), fontWeight: 600 }}>{r.like_rate.toFixed(2)}% like-rate</span></>}</div>
+                    <div className="s">{[handle === ALL ? nameOf(r.clinic) : null, label(r.format), langName(r.language), fmt.dur(r.duration), sort === 'views' ? null : fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}{sort === 'views' && r.like_rate != null && <> · <span style={{ color: lrColor(r.like_rate), fontWeight: 600 }}>{r.like_rate.toFixed(2)}% like-rate</span></>}</div>
                   </div>
                   {lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 13, height: 13 })}</span>}
                   {I.fwd({ className: 'chev', style: { color: sel?.shortcode === r.shortcode ? 'var(--c-tint)' : undefined } })}
@@ -207,7 +208,7 @@ export default function Reels() {
                 {data?.reels.map((r, i) => (
                   <tr key={r.shortcode} className={sel?.shortcode === r.shortcode && card ? 'on' : ''} onClick={() => { setSel(r); setCard('open') }} onDoubleClick={e => { e.preventDefault(); window.getSelection()?.removeAllRanges(); sendToLibrary([r.shortcode]) }} title="Double-click to add to the hook library">
                     <td onClick={e => e.stopPropagation()} style={{ width: 28 }}><span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>{selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onChange={() => togglePick(r.shortcode)} />}{lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 12, height: 12 })}</span>}</span></td>
-                    {visibleCols.map(c => <td key={c.key} className={(c.wrap ? 'wrap ' : '') + (c.num ? 'num' : '')} title={!c.wrap && typeof r[c.key as keyof Reel] === 'string' ? String(r[c.key as keyof Reel]) : undefined}>{c.key === 'clinic' ? nameOf(r.clinic) : c.fmt ? c.fmt(r, i) : String(r[c.key as keyof Reel] ?? '')}</td>)}
+                    {visibleCols.map(c => <td key={c.key} className={(c.wrap ? 'wrap ' : '') + (c.num ? 'num' : '')} title={!c.wrap && typeof r[c.key as keyof Reel] === 'string' ? String(r[c.key as keyof Reel]) : undefined}>{c.key === 'clinic' ? nameOf(r.clinic) : c.key === 'format' || c.key === 'hook_type' || c.key === 'flag' ? label(String(r[c.key] ?? '')) : c.fmt ? c.fmt(r, i) : String(r[c.key as keyof Reel] ?? '')}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -404,10 +405,10 @@ export function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Editable value={r.hook_en} placeholder="Hook in English" onSave={v => onEdit(r.shortcode, { hook_en: v })} style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-.015em', lineHeight: 1.3, color: 'var(--c-tint)' }} />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <Editable value={r.format} placeholder="format" onSave={v => onEdit(r.shortcode, { format: v })} chip />
-              <Editable value={r.hook_type} placeholder="hook type" onSave={v => onEdit(r.shortcode, { hook_type: v })} chip />
+              <Editable value={r.format} placeholder="format" onSave={v => onEdit(r.shortcode, { format: v })} chip show={label} />
+              <Editable value={r.hook_type} placeholder="hook type" onSave={v => onEdit(r.shortcode, { hook_type: v })} chip show={label} />
               {spoken && <span className="chip">{langName(spoken)}</span>}
-              <Editable value={r.flag} placeholder="flag" onSave={v => onEdit(r.shortcode, { flag: v })} chip chipClass={flagKind === 'organic' ? 'pill green' : flagKind.includes('paid') ? 'pill red' : flagKind ? 'pill amber' : 'chip'} />
+              <Editable value={r.flag} placeholder="flag" onSave={v => onEdit(r.shortcode, { flag: v })} chip show={label} chipClass={flagKind === 'organic' ? 'pill green' : flagKind.includes('paid') ? 'pill red' : flagKind ? 'pill amber' : 'chip'} />
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 'auto', flexWrap: 'wrap' }}>
               <SendTo codes={[r.shortcode]} inLib={inLib} onLibrary={onLib} align="left" />
@@ -506,17 +507,18 @@ export function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }
   )
 }
 
-function Editable({ value, placeholder, onSave, chip, chipClass, multiline, style, editSignal }: { value: string; placeholder: string; onSave: (v: string) => Promise<void>; chip?: boolean; chipClass?: string; multiline?: boolean; style?: React.CSSProperties; editSignal?: number }) {
+function Editable({ value, placeholder, onSave, chip, chipClass, multiline, style, editSignal, show }: { value: string; placeholder: string; onSave: (v: string) => Promise<void>; show?: (v: string) => string; chip?: boolean; chipClass?: string; multiline?: boolean; style?: React.CSSProperties; editSignal?: number }) {
   const [editing, setEditing] = useState(false)
-  const [v, setV] = useState(value || '')
-  useEffect(() => setV(value || ''), [value])
+  const shown = (x: string) => show && x ? show(x) : x
+  const [v, setV] = useState(shown(value || ''))
+  useEffect(() => setV(shown(value || '')), [value])
   useEffect(() => { if (editSignal) setEditing(true) }, [editSignal])
-  const commit = async () => { setEditing(false); if (v !== (value || '')) await onSave(v) }
+  const commit = async () => { setEditing(false); if (v !== shown(value || '')) await onSave(v) }
   if (editing) {
     return multiline
       ? <textarea className="inline" autoFocus value={v} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Escape') { setV(value || ''); setEditing(false) } }} />
       : <input autoFocus value={v} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setV(value || ''); setEditing(false) } }} style={{ ...style, border: '1px solid var(--c-tint)', borderRadius: 8, padding: '4px 8px', background: 'var(--c-card)', width: chip ? 140 : '100%' }} />
   }
-  if (chip) return <button className={chipClass || 'chip'} style={{ border: 0, cursor: 'text', opacity: value ? 1 : .6 }} onClick={() => setEditing(true)} title="Click to edit">{value || placeholder}</button>
+  if (chip) return <button className={chipClass || 'chip'} style={{ border: 0, cursor: 'text', opacity: value ? 1 : .6 }} onClick={() => setEditing(true)} title="Click to edit">{value ? (show ? show(value) : value) : placeholder}</button>
   return <div className="editable" style={style} onClick={() => setEditing(true)} title="Click to edit">{value || <span className="caption">{placeholder}</span>}</div>
 }

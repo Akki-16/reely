@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { HoldButton, Toolbar, Ui, useName } from '../App'
 import { api, clientImage, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
 import type { Branch, Brief, ClientDoc, Person, Plan, Reel, Script, ScriptData, Source } from '../api'
+import { label } from '../categoryInfo'
 import { I } from '../icons'
 import { Avatar, SCRIPT_LANGS } from './Clients'
 import PlanTab from './PlanTab'
@@ -260,11 +261,16 @@ function Sources({ c, save, reload }: { c: ClientDoc; save: (p: Partial<ClientDo
   )
 }
 
+const igHandle = (v: string) => { const m = (v || '').match(/instagram\.com\/([A-Za-z0-9_.]+)/); const h = (m ? m[1] : (v || '').trim().replace(/^@/, '')).replace(/\/$/, ''); return /^[A-Za-z0-9_.]{1,40}$/.test(h) && !['p', 'reel', 'reels', 'explore'].includes(h) ? h : null }
+
 function EditSheet({ c, edit, onClose, save }: { c: ClientDoc; edit: Edit; onClose: () => void; save: (p: Partial<ClientDoc>) => Promise<void> }) {
+  const { clinics, viewOnly, toast, refreshClinics } = useContext(Ui)
   const isNew = !edit.item.id
   const [v, setV] = useState<any>({ ...edit.item })
   const set = (k: string, val: any) => setV((x: any) => ({ ...x, [k]: val }))
-  const commit = async () => {
+  const [scraping, setScraping] = useState(false)
+  const commit = async () => { await commitOnly(); onClose() }
+  const commitOnly = async () => {
     const item = { ...v, id: v.id || uid(edit.kind[0]) }
     if (edit.kind === 'person') {
       let people = isNew ? [...c.people, item] : c.people.map(p => p.id === item.id ? item : p)
@@ -277,7 +283,6 @@ function EditSheet({ c, edit, onClose, save }: { c: ClientDoc; edit: Edit; onClo
     } else {
       await save({ sources: isNew ? [...c.sources, item] : c.sources.map(s => s.id === item.id ? item : s) })
     }
-    onClose()
   }
   const remove = async () => {
     if (edit.kind === 'person') await save({ people: c.people.filter(p => p.id !== v.id), sources: c.sources.map(s => s.person_id === v.id ? { ...s, person_id: null } : s) })
@@ -326,7 +331,25 @@ function EditSheet({ c, edit, onClose, save }: { c: ClientDoc; edit: Edit; onClo
             : <label className="formrow"><span>{v.kind === 'custom' ? 'Link or text' : 'Link'}</span><div className="field"><input autoFocus={isNew && !!v.label} value={v.value || ''} onChange={e => set('value', e.target.value)} placeholder={v.kind === 'social' ? '@handle or https://instagram.com/…' : 'https://…'} /></div></label>}
           {owners}
           {v.detail && <div className="caption" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>{v.detail}{v.read_at && v.kind !== 'note' && v.kind !== 'file' && <button type="button" className="linkbtn" onClick={async () => { await api.clientRead(c.id, v.id).catch(() => {}); await save({}); onClose() }}>Read again</button>}</div>}
-          {v.kind === 'social' && <div className="caption">An Instagram handle that is already a reference account in Reely brings its reels and like-rate into the brief.</div>}
+          {v.kind === 'social' && (() => {
+            const ig = /instagram|^@/.test(v.value || '') || !/[/.]/.test(v.value || '') ? igHandle(v.value || '') : null
+            const known = ig ? clinics.find(x => x.handle === ig) : null
+            if (!ig) return <div className="caption">Paste an Instagram link or @handle. Reely can scrape it so its reels and like-rate feed the brief.</div>
+            if (known) return <div className="notebox" style={{ gap: 4 }}><b style={{ fontSize: 13 }}>@{ig} is in Reely</b><span className="caption">{(known.reels_total || 0).toLocaleString()} reels · {known.analysed} analysed{known.median_like_rate != null ? ` · median like-rate ${known.median_like_rate.toFixed(2)}%` : ''}{['running', 'queued'].includes(known.status) ? ' · run in progress' : ''}. {known.analysed ? 'The brief reads its best reels.' : 'The brief reads it once its run finishes.'}</span></div>
+            return (
+              <div className="notebox" style={{ gap: 8 }}>
+                <span className="sub" style={{ lineHeight: 1.5 }}><b>@{ig} isn't in Reely yet.</b> Scrape it and the brief gets this client's own reels: what they post and their like-rate today.</span>
+                {viewOnly ? <span className="caption">Scraping runs on an Apple Silicon Mac.</span> : <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn sm" disabled={scraping} onClick={async () => {
+                    setScraping(true)
+                    try { if (valid) await commitOnly(); await api.addClinic(ig, 'Client accounts'); refreshClinics(); toast(`Scraping @${ig}. Follow it on the Run page; the brief reads it when it finishes.`); onClose() }
+                    catch (e: any) { toast(e.message); setScraping(false) }
+                  }}>{scraping ? 'Starting…' : 'Scrape this account'}</button>
+                  <span className="caption" style={{ flex: 1, minWidth: 180 }}>It goes under its own speciality, Client accounts, so it stays out of your research numbers.</span>
+                </div>}
+              </div>
+            )
+          })()}
         </>}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {!isNew && <HoldButton label="Remove" ms={1200} onHold={remove} className="btn plain" />}
@@ -358,6 +381,42 @@ function BriefView({ c, setC, reload }: { c: ClientDoc; setC: (c: ClientDoc) => 
     try { await api.briefRedraft(c.id, section, note); setEditing(null); reload() } catch (e: any) { toast(e.message) }
   }
   const lock = async (locked: boolean) => { try { setC(await api.briefSave(c.id, { locked })) } catch (e: any) { toast(e.message) } }
+  // "On this page" follows the section you are reading, and a jump flashes where you landed
+  const [active, setActive] = useState('')
+  useEffect(() => {
+    if (!b) return
+    const els = SECTION_ORDER.map(([k]) => document.getElementById('b-' + k)).filter(Boolean) as HTMLElement[]
+    const seen = new Map<string, number>()
+    const io = new IntersectionObserver(es => {
+      es.forEach(e => seen.set(e.target.id.slice(2), e.isIntersecting ? e.intersectionRatio : 0))
+      const best = SECTION_ORDER.map(([k]) => k).find(k => (seen.get(k) || 0) > 0)
+      if (best) setActive(best)
+    }, { rootMargin: '-12% 0px -55% 0px', threshold: [0, .2, .6] })
+    els.forEach(el => io.observe(el))
+    return () => io.disconnect()
+  }, [!!b, b?.posted])
+  const jump = (k: string) => {
+    const el = document.getElementById('b-' + k); if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setActive(k)
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash')
+  }
+  // things to check: tick one off, or answer it. Answers go into a note the next redraft reads.
+  const [allChecks, setAllChecks] = useState(false)
+  const dropCheck = async (i: number) => { try { setC(await api.briefSave(c.id, { brief: { ...b, checks: (b!.checks || []).filter((_: string, j: number) => j !== i) }, section: 'checks' })) } catch (e: any) { toast(e.message) } }
+  const answerCheck = async (i: number) => {
+    const q: string = b!.checks[i]
+    const a = await ask({ title: 'Answer this', label: q, multiline: true, placeholder: 'What is the right answer?', ok: 'Save answer', note: 'Saved to a note called Confirmed facts in Sources. Redraft the brief, or just that section, to use it.' })
+    if (!a) return
+    try {
+      const line = `• ${q}\n  → ${a}`
+      const has = c.sources.find(x => x.id === 'sconfirmed')
+      const sources = has ? c.sources.map(x => x.id === 'sconfirmed' ? { ...x, value: (x.value ? x.value + '\n' : '') + line } : x)
+        : [...c.sources, { id: 'sconfirmed', kind: 'note' as const, label: 'Confirmed facts', value: line }]
+      await api.clientEdit(c.id, { sources })
+      setC(await api.briefSave(c.id, { brief: { ...b, checks: (b!.checks || []).filter((_: string, j: number) => j !== i) }, section: 'checks' }))
+      toast('Answer saved to Confirmed facts')
+    } catch (e: any) { toast(e.message) }
+  }
 
   if (!b) return (
     <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start', maxWidth: 680 }}>
@@ -443,13 +502,19 @@ function BriefView({ c, setC, reload }: { c: ClientDoc; setC: (c: ClientDoc) => 
         </div>
         <div className="card railcard">
           <b className="caption" style={{ fontWeight: 700 }}>On this page</b>
-          {SECTION_ORDER.filter(([k]) => k !== 'posted' || b.posted).map(([k, t]) => <a key={k} href={'#b-' + k} onClick={e => { e.preventDefault(); document.getElementById('b-' + k)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }} style={{ color: (m.edited || []).includes(k) ? 'var(--c-tint)' : 'var(--c-ink)', fontWeight: (m.edited || []).includes(k) ? 600 : 400 }}>{t}{(m.edited || []).includes(k) ? ' ●' : ''}</a>)}
-          <span className="caption">● edited by you</span>
+          {SECTION_ORDER.filter(([k]) => k !== 'posted' || b.posted).map(([k, t]) => <a key={k} href={'#b-' + k} className={'raillink' + (active === k ? ' on' : '')} onClick={e => { e.preventDefault(); jump(k) }}>{t}{(m.edited || []).includes(k) && <span className="editdot" title="Edited by you">●</span>}</a>)}
+          {(m.edited || []).length > 0 && <span className="caption"><span className="editdot" style={{ marginLeft: 0, marginRight: 5 }}>●</span>edited by you</span>}
         </div>
         {(b.checks || []).length > 0 && <div className="railcard checks">
-          <b style={{ color: 'var(--c-amber)' }}>{b.checks.length} thing{b.checks.length === 1 ? '' : 's'} to check</b>
-          {b.checks.map((x: string, i: number) => <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>{x}</div>)}
-          {!locked && <button className="linkbtn" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing('checks')}>Edit</button>}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}><b style={{ color: 'var(--c-amber)', flex: 1 }}>{b.checks.length} thing{b.checks.length === 1 ? '' : 's'} to check</b>{!locked && <button className="linkbtn" onClick={() => setEditing('checks')}>Edit list</button>}</div>
+          <div className="caption" style={{ lineHeight: 1.45 }}>{locked ? 'Unlock the brief to answer these.' : 'Answer one and it is saved for the next redraft; or tick it off if it no longer matters.'}</div>
+          {(allChecks ? b.checks : b.checks.slice(0, 4)).map((x: string, i: number) => (
+            <div key={i} className="checkitem">
+              <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{x}</div>
+              {!locked && <div style={{ display: 'flex', gap: 6 }}><button className="btn plain sm" onClick={() => answerCheck(i)}>Answer</button><button className="btn plain sm" onClick={() => dropCheck(i)} title="Remove from the list">{I.check({ width: 11, height: 11 })} Done</button></div>}
+            </div>
+          ))}
+          {b.checks.length > 4 && <button className="linkbtn" style={{ alignSelf: 'flex-start' }} onClick={() => setAllChecks(!allChecks)}>{allChecks ? 'Show fewer' : `Show all ${b.checks.length}`}</button>}
           {editing === 'checks' && <TextEdit value={(b.checks || []).join('\n')} rows={5} onSave={t => saveBrief({ checks: lines(t) }, 'checks')} onCancel={() => setEditing(null)} />}
         </div>}
         <div className="card railcard">
@@ -506,16 +571,32 @@ function ExtraEdit({ title, body, onSave, onCancel }: { title: string; body: str
 }
 
 function VoiceEdit({ voice, onSave, onCancel }: { voice: any; onSave: (v: any) => void; onCancel: () => void }) {
-  const [v, setV] = useState({ clinical: 30, technical: 30, energy: 40, mix: [], note: '', ...voice })
-  const mixText = (v.mix || []).map((x: any) => `${LANGS[x.lang] || x.lang} ${x.pct}`).join(', ')
-  const [mix, setMix] = useState(mixText)
-  const parseMix = (s: string) => s.split(',').map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^(.+?)\s+(\d+)%?$/); const name = (m ? m[1] : x).trim(); const code = Object.entries(LANGS).find(([, n]) => n.toLowerCase() === name.toLowerCase())?.[0] || name; return { lang: code, pct: m ? Number(m[2]) : 0 } })
+  const [v, setV] = useState({ clinical: 30, technical: 30, energy: 40, note: '', ...voice })
+  // one number box per language, so a typo can't wipe the split
+  const [mix, setMix] = useState<{ lang: string; pct: number }[]>(() => (voice?.mix || []).map((x: any) => ({ lang: x.lang, pct: Number(x.pct) || 0 })))
+  const total = mix.reduce((a, x) => a + (x.pct || 0), 0)
+  const save = () => {
+    let m = mix.filter(x => x.lang)
+    if (m.length === 1) m = [{ ...m[0], pct: 100 }]                                   // a single language is all of it
+    else if (m.length > 1 && total === 0) m = m.map(x => ({ ...x, pct: Math.round(100 / m.length) }))
+    onSave({ ...v, mix: m })
+  }
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
     {[['clinical', 'Warm', 'Clinical'], ['technical', 'Simple', 'Technical'], ['energy', 'Calm', 'Energetic']].map(([k, a, z]) => (
       <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><div className="ends caption"><span>{a}</span><span>{z}</span></div><input type="range" min={0} max={100} value={v[k]} onChange={e => setV({ ...v, [k]: Number(e.target.value) })} style={{ accentColor: 'var(--c-tint)' }} /></label>))}
-    <label className="formrow"><span>Language mix</span><div className="field"><input value={mix} onChange={e => setMix(e.target.value)} placeholder="Telugu 70, English 30" /></div></label>
+    <div className="formrow"><span>Language mix <span className="caption" style={{ color: mix.length > 1 && total !== 100 ? 'var(--c-amber)' : 'var(--c-muted)' }}>{mix.length > 1 ? `adds up to ${total}%` : mix.length === 1 ? 'one language: 100%' : 'add the languages the reels use'}</span></span>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {mix.map((x, i) => (
+          <label key={x.lang} className="mixchip"><span>{LANGS[x.lang] || x.lang}</span>
+            <input type="number" min={0} max={100} value={mix.length === 1 ? 100 : x.pct} disabled={mix.length === 1} onChange={e => setMix(m => m.map((y, j) => j === i ? { ...y, pct: Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0)) } : y))} aria-label={`${LANGS[x.lang] || x.lang} percent`} />
+            <button type="button" onClick={() => setMix(m => m.filter((_, j) => j !== i))} aria-label={`Remove ${LANGS[x.lang] || x.lang}`} style={{ border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', padding: '0 6px 0 0', font: 'inherit' }}>✕</button>
+          </label>
+        ))}
+        <select className="chipsel empty" style={{ height: 30, flex: '0 0 auto', width: 'auto' }} value="" onChange={e => { if (e.target.value) setMix(m => [...m, { lang: e.target.value, pct: m.length ? 0 : 100 }]) }} aria-label="Add a language"><option value="">+ language</option>{Object.entries(LANGS).filter(([k]) => !mix.some(x => x.lang === k)).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
+      </div>
+    </div>
     <label className="formrow"><span>Note</span><div className="field"><input value={v.note || ''} onChange={e => setV({ ...v, note: e.target.value })} placeholder="Medical terms stay in English" /></div></label>
-    <EditButtons onSave={() => onSave({ ...v, mix: parseMix(mix) })} onCancel={onCancel} />
+    <EditButtons onSave={save} onCancel={onCancel} />
   </div>
 }
 
@@ -535,7 +616,7 @@ function RefsView({ c, refs, reload, onGenerate }: { c: ClientDoc; refs: Ref[]; 
       {refs.map(r => (
         <div key={r.shortcode} className="card refcard">
           <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--c-tint)', lineHeight: 1.35, letterSpacing: '-.01em' }}>{r.hook_en || r.hook_original || r.caption?.split('\n')[0] || r.shortcode}</div>
-          <div className="caption" style={{ color: 'var(--c-sub)' }}>{nameOf(r.clinic)}{r.format ? ' · ' + r.format : ''}{r.language ? ' · ' + langName(r.language) : ''}{r.duration ? ' · ' + fmt.dur(r.duration) : ''}</div>
+          <div className="caption" style={{ color: 'var(--c-sub)' }}>{nameOf(r.clinic)}{r.format ? ' · ' + label(r.format) : ''}{r.language ? ' · ' + langName(r.language) : ''}{r.duration ? ' · ' + fmt.dur(r.duration) : ''}</div>
           <div style={{ display: 'flex', gap: 12, fontSize: 12.5 }}><b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)}</b><span className="sub">{fmt.n(r.views)} views</span>{r.scripts > 0 && <span className="pill tint" style={{ padding: '1px 8px' }}>{r.scripts} script{r.scripts === 1 ? '' : 's'}</span>}</div>
           {r.summary && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.summary}</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 'auto', paddingTop: 4 }}>
@@ -570,7 +651,7 @@ function GenerateSheet({ c, refReel, onClose, onMade }: { c: ClientDoc; refReel:
     <div className="sheet-back" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <form className="card sheet" style={{ width: 540 }} onSubmit={e => { e.preventDefault(); if (refReel || note.trim()) go() }}>
         <b style={{ fontSize: 17 }}>{refReel ? 'Generate similar' : 'New script from a topic'}</b>
-        {refReel && <div className="notebox" style={{ gap: 4 }}><b style={{ color: 'var(--c-tint)' }}>{refReel.hook_en || refReel.shortcode}</b><span className="caption">{nameOf(refReel.clinic)} · {refReel.format} · {fmt.pct(refReel.like_rate)} like-rate · {fmt.n(refReel.views)} views</span></div>}
+        {refReel && <div className="notebox" style={{ gap: 4 }}><b style={{ color: 'var(--c-tint)' }}>{refReel.hook_en || refReel.shortcode}</b><span className="caption">{nameOf(refReel.clinic)} · {label(refReel.format)} · {fmt.pct(refReel.like_rate)} like-rate · {fmt.n(refReel.views)} views</span></div>}
         <div className="grid2" style={{ gap: 12 }}>
           <label className="formrow"><span>In the voice of</span><div className="field"><select value={person} onChange={e => setPerson(e.target.value)}>{c.people.map(p => <option key={p.id} value={p.id}>{p.name}{p.lead ? ' ★' : ''}</option>)}<option value="">The clinic (no one person)</option></select></div></label>
           <label className="formrow"><span>Language</span><div className="field"><select value={language} onChange={e => setLanguage(e.target.value)}>{langs.map(l => <option key={l} value={l}>{LANGS[l] || l}</option>)}</select></div></label>
@@ -762,7 +843,7 @@ function RefCard({ r, borrowed }: { r: NonNullable<Script['ref']>; borrowed?: st
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="caption" style={{ fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' }}>Reference reel</div>
           <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--c-tint)', lineHeight: 1.35 }}>{r.hook_en || r.hook_original || r.shortcode}</div>
-          <div className="caption" style={{ color: 'var(--c-sub)' }}>{[nameOf(r.clinic), r.format, r.hook_type, langName(r.language), r.duration ? fmt.dur(r.duration) : null, r.date ? fmt.date(r.date) : null].filter(Boolean).join(' · ')}</div>
+          <div className="caption" style={{ color: 'var(--c-sub)' }}>{[nameOf(r.clinic), label(r.format), label(r.hook_type), langName(r.language), r.duration ? fmt.dur(r.duration) : null, r.date ? fmt.date(r.date) : null].filter(Boolean).join(' · ')}</div>
           <div style={{ display: 'flex', gap: 14, fontSize: 12.5, alignItems: 'baseline' }}><b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)} like-rate</b><span className="sub">{fmt.n(r.views)} views</span><span className="sub">{fmt.n(r.likes)} likes</span></div>
           {r.summary && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>Why it worked:</b> {r.summary}</div>}
           {borrowed && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>What this script takes from it:</b> {borrowed}</div>}

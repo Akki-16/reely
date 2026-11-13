@@ -94,7 +94,7 @@ def rename(body: Rename):
     (annotated or not) and is written back to each account's annotations.json so re-runs keep it."""
     if body.field not in ("format", "hook_type", "flag"):
         raise HTTPException(400, "Only format, hook type and flag labels can be renamed")
-    new = body.new.strip().lower().replace(" ", "-")
+    new = "-".join(body.new.strip().lower().split())
     if not new or new == body.old:
         raise HTTPException(400, "Give the label a different name")
     sql = f"SELECT r.shortcode, r.clinic, r.{body.field} v FROM reels r LEFT JOIN clinics c ON c.handle=r.clinic WHERE r.{body.field} IS NOT NULL"

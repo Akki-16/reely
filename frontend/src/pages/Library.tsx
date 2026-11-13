@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, isTauri, lrColor, url } from '../api'
+import { label } from '../categoryInfo'
 import { I } from '../icons'
 
 async function copyText(t: string) {
@@ -52,8 +53,8 @@ export default function Library() {
       <Toolbar title="Hook library">
         <SpecialityPicker />
         <ClinicPicker value={clinic} onChange={setClinic} allValue="" />
-        <div className="field"><select value={hookType} onChange={e => setHookType(e.target.value)} aria-label="Hook type"><option value="">Any hook type</option>{facet('hook_type').map(v => <option key={v} value={v}>{v}</option>)}</select></div>
-        <div className="field"><select value={format} onChange={e => setFormat(e.target.value)} aria-label="Format"><option value="">Any format</option>{facet('format').map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div className="field"><select value={hookType} onChange={e => setHookType(e.target.value)} aria-label="Hook type"><option value="">Any hook type</option>{facet('hook_type').map(v => <option key={v} value={v}>{label(v)}</option>)}</select></div>
+        <div className="field"><select value={format} onChange={e => setFormat(e.target.value)} aria-label="Format"><option value="">Any format</option>{facet('format').map(v => <option key={v} value={v}>{label(v)}</option>)}</select></div>
         <div className="field" style={{ width: 180 }}>{I.search()}<input placeholder="Search hooks and notes" value={q} onChange={e => setQ(e.target.value)} /></div>
       </Toolbar>
       <div className="main"><div className="main-inner">
@@ -102,8 +103,8 @@ function HookRow({ r, saved, onToggle, showNote, onNote }: { r: any; saved: bool
         <div className="hk">{r.hook_en || r.hook_original}</div>
         {r.hook_original && r.hook_original !== r.hook_en && <div className="caption" style={{ fontStyle: 'italic' }}>Spoken: {r.hook_original.slice(0, 220)}</div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {r.hook_type && <span className="chip">{r.hook_type}</span>}
-          {r.format && <span className="chip">{r.format}</span>}
+          {r.hook_type && <span className="chip">{label(r.hook_type)}</span>}
+          {r.format && <span className="chip">{label(r.format)}</span>}
           <span className="caption">{nameOf(r.clinic)}{r.speciality ? ` · ${r.speciality}` : ''} · {fmt.n(r.views)} views{r.outlier ? ` · ${Math.round(r.outlier)}× median` : ''}</span>
         </div>
         {r.summary && <div className="caption" style={{ lineHeight: 1.5, color: 'var(--c-sub)' }}>{r.summary}</div>}

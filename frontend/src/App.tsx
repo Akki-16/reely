@@ -12,6 +12,7 @@ import HowItWorks from './pages/HowItWorks'
 import Library from './pages/Library'
 import Clients from './pages/Clients'
 import Categories from './pages/Categories'
+import CategoriesLearn from './pages/CategoriesLearn'
 import ClientRoom from './pages/ClientRoom'
 import { SidebarUpdate, UpdateCard, UpdaterProvider } from './updater'
 
@@ -144,6 +145,7 @@ export default function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/insights/:handle" element={<Insights />} />
             <Route path="/categories" element={<Categories />} />
+            <Route path="/categories/learn" element={<CategoriesLearn />} />
             <Route path="/library" element={<Library />} />
             <Route path="/clients" element={<Clients />} />
             <Route path="/clients/:id" element={<ClientRoom />} />
@@ -197,11 +199,29 @@ export const useName = () => useContext(Ui).nameOf
 
 export function Toolbar({ title, children }: { title: string; children?: React.ReactNode }) {
   const { sideOpen, setSideOpen } = useContext(Ui)
+  // the bar scrolls sideways when the window is narrow; an arrow on a blurred edge shows there is more
+  const ref = useRef<HTMLElement>(null)
+  const [more, setMore] = useState({ left: false, right: false })
+  useEffect(() => {
+    const el = ref.current; if (!el) return
+    const check = () => {
+      const left = el.scrollLeft > 4, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+      setMore(m => m.left === left && m.right === right ? m : { left, right })
+    }
+    check()
+    el.addEventListener('scroll', check, { passive: true })
+    const ro = new ResizeObserver(check); ro.observe(el); Array.from(el.children).forEach(c => ro.observe(c))
+    const mo = new MutationObserver(check); mo.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => { el.removeEventListener('scroll', check); ro.disconnect(); mo.disconnect() }
+  }, [])
+  const go = (d: number) => ref.current?.scrollBy({ left: d * Math.max(200, ref.current.clientWidth * .6), behavior: 'smooth' })
   return (
-    <header className="toolbar" data-tauri-drag-region aria-label={title}>
+    <header ref={ref} className="toolbar" data-tauri-drag-region aria-label={title}>
+      <span className={'tb-edge left' + (more.left ? ' on' : '')}><button aria-label="Scroll the toolbar left" tabIndex={more.left ? 0 : -1} onClick={() => go(-1)}>{I.back({ width: 13, height: 13 })}</button></span>
       {!sideOpen && <button className="iconbtn" aria-label="Show sidebar" title="Show sidebar" onClick={() => setSideOpen(true)}>{I.sidebar()}</button>}
       <div className="spacer" data-tauri-drag-region />
       {children}
+      <span className={'tb-edge right' + (more.right ? ' on' : '')}><button aria-label="Scroll the toolbar right" tabIndex={more.right ? 0 : -1} onClick={() => go(1)}>{I.fwd({ width: 13, height: 13 })}</button></span>
     </header>
   )
 }

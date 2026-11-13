@@ -1,7 +1,9 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, langName, lrColor } from '../api'
 import type { CatCell, CatField, CatGroup, Categories as Cats, Reel } from '../api'
+import { label } from '../categoryInfo'
 import { I } from '../icons'
 import { Inspector, ReelPanel } from './Reels'
 import SendTo from './SendTo'
@@ -18,7 +20,7 @@ function useLocal<T>(key: string, init: T) {
   useEffect(() => { localStorage.setItem(key, JSON.stringify(v)) }, [v])
   return [v, setV] as const
 }
-const show = (f: CatField, v: string) => f === 'language' ? (langName(v) || v) : v
+const show = (f: CatField, v: string) => f === 'language' ? (langName(v) || v) : label(v)
 const pct = (v: number | null | undefined) => v == null ? '—' : v.toFixed(2) + '%'
 
 export default function Categories() {
@@ -112,7 +114,7 @@ export default function Categories() {
           <b style={{ width: 52, color: lrColor(r.like_rate) }}>{pct(r.like_rate)}</b>
           <div className="fill" style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_original || r.shortcode}</div>
-            <div className="caption" style={{ color: 'var(--c-sub)' }}>{[nameOf(r.clinic), sel?.bv == null ? r.hook_type : null, a !== 'format' && b !== 'format' ? r.format : null, fmt.dur(r.duration), fmt.n(r.views) + ' views', fmt.date(r.date)].filter(Boolean).join(' · ')}</div>
+            <div className="caption" style={{ color: 'var(--c-sub)' }}>{[nameOf(r.clinic), sel?.bv == null ? label(r.hook_type) : null, a !== 'format' && b !== 'format' ? label(r.format) : null, fmt.dur(r.duration), fmt.n(r.views) + ' views', fmt.date(r.date)].filter(Boolean).join(' · ')}</div>
           </div>
           {lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 13, height: 13 })}</span>}
           <SendTo codes={[r.shortcode]} inLib={lib.has(r.shortcode)} onLibrary={() => toggleLib(r.shortcode)} />
@@ -150,6 +152,10 @@ export default function Categories() {
         <div className="seg" role="group" aria-label="View">{(['list', 'grid', 'ranked'] as View[]).map(v => <button key={v} className={view === v ? 'on' : ''} onClick={() => setView(v)}>{v[0].toUpperCase() + v.slice(1)}</button>)}</div>
       </Toolbar>
       <div className="main"><div className="main-inner wide" style={{ gap: 14 }}>
+        <div className="catintro">
+          <span className="sub">{data ? <>{data.total.toLocaleString()} {organic ? 'organic ' : ''}analysed reels in {scopeLabel}{data.median != null && <> · median like-rate <b style={{ color: 'var(--c-ink)' }}>{pct(data.median)}</b></>}</> : ' '}</span>
+          <Link to="/categories/learn" className="learnlink">{I.info({ width: 13, height: 13 })} Learn more about categories</Link>
+        </div>
         {!data && <div className="empty">Loading…</div>}
         {data && data.total === 0 && <div className="card pad"><b style={{ fontSize: 15 }}>No annotated reels in {scopeLabel}</b><div className="sub" style={{ marginTop: 6 }}>{organic ? 'Turn off Organic only, or run' : 'Run'} a reference account so its reels are transcribed and annotated.</div></div>}
 
@@ -302,7 +308,7 @@ function TidySheet({ field, groups, speciality, onClose, onChanged }: { field: C
   const big = [...groups].sort((x, y) => y.n - x.n)
   const apply = async (old: string, name: string) => {
     setBusy(old)
-    try { const r = await api.categoryRename(field, old, name, speciality); toast(`${r.changed} reel${r.changed === 1 ? '' : 's'} now labelled ${r.new}`); onChanged() }
+    try { const r = await api.categoryRename(field, old, name, speciality); toast(`${r.changed} reel${r.changed === 1 ? '' : 's'} now labelled ${label(r.new)}`); onChanged() }
     catch (e: any) { toast(e.message) } finally { setBusy('') }
   }
   return (
@@ -311,12 +317,12 @@ function TidySheet({ field, groups, speciality, onClose, onChanged }: { field: C
       <div className="group" style={{ boxShadow: 'none', background: 'var(--c-bg)', maxHeight: 420, overflow: 'auto' }}>
         {small.map(g => (
           <div key={g.value} className="grow" style={{ padding: '8px 14px', gap: 10 }}>
-            <div className="fill"><b style={{ fontSize: 13 }}>{g.value}</b><div className="caption">{g.n} reel{g.n === 1 ? '' : 's'} · {pct(g.like_rate)}</div></div>
+            <div className="fill"><b style={{ fontSize: 13 }}>{label(g.value)}</b><div className="caption">{g.n} reel{g.n === 1 ? '' : 's'} · {pct(g.like_rate)}</div></div>
             <div className="field" style={{ height: 28 }}><select value="" disabled={!!busy} onChange={e => { if (e.target.value) apply(g.value, e.target.value) }} aria-label={`Merge ${g.value} into`} style={{ fontSize: 12 }}>
               <option value="">{busy === g.value ? 'Working…' : 'Merge into…'}</option>
-              {big.filter(x => x.value !== g.value).map(x => <option key={x.value} value={x.value}>{x.value} · {x.n}</option>)}
+              {big.filter(x => x.value !== g.value).map(x => <option key={x.value} value={x.value}>{label(x.value)} · {x.n}</option>)}
             </select></div>
-            <button className="btn plain sm" disabled={!!busy} onClick={async () => { const n = await ask({ title: `Rename "${g.value}"`, label: 'New label', value: g.value, ok: 'Rename', note: 'Typing the name of another label merges this one into it.' }); if (n && n !== g.value) apply(g.value, n) }}>Rename</button>
+            <button className="btn plain sm" disabled={!!busy} onClick={async () => { const n = await ask({ title: `Rename "${label(g.value)}"`, label: 'New label', value: label(g.value), ok: 'Rename', note: 'Typing the name of another label merges this one into it.' }); if (n && n !== label(g.value)) apply(g.value, n) }}>Rename</button>
           </div>
         ))}
       </div>

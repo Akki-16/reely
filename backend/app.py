@@ -641,6 +641,11 @@ def edit_reel(shortcode: str, body: ReelEdit):
     r = db.one("SELECT * FROM reels WHERE shortcode=?", (shortcode,))
     if not r: raise HTTPException(404)
     data = {k: v for k, v in body.model_dump().items() if v is not None}
+    for k in ("format", "hook_type", "flag"):
+        # labels are shown as "Doctor explainer" but stored as "doctor-explainer"; a flag keeps its note after ";"
+        if data.get(k):
+            head, sep, rest = data[k].partition(";")
+            data[k] = "-".join(head.strip().lower().split()) + (sep + rest if sep else "")
     if data:
         sets = ", ".join(f"{k}=?" for k in data)
         with db.tx() as c:
