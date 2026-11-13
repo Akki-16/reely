@@ -96,8 +96,11 @@ def overview():
         c["imported"] = meta.get("imported")
         c["pending"] = int(meta.get("download_pending") or 0)   # reels a blocked download stage left for later
         from pipeline import failures as _fl
-        c["failed"] = sum(1 for v in _fl.load(DATA_ROOT / c["handle"]).values() if not v.get("ignored"))
-        c["missing_videos"] = db.one("SELECT COUNT(*) n FROM reels WHERE clinic=? AND (video_file IS NULL OR video_file='')", (c["handle"],))["n"]
+        fails = _fl.load(DATA_ROOT / c["handle"])
+        c["failed"] = sum(1 for v in fails.values() if not v.get("ignored"))
+        # analysed reels with no video here; reels dismissed after a failed download are never fetched again, so not counted
+        c["missing_videos"] = sum(1 for r in db.rows("SELECT shortcode FROM reels WHERE clinic=? AND (video_file IS NULL OR video_file='')", (c["handle"],))
+                                  if not (fails.get(r["shortcode"]) or {}).get("ignored"))
         c["video_job"] = _vid_jobs.get(c["handle"])
         q = db.one("SELECT id, stage, stages FROM runs WHERE clinic=? AND status IN ('queued','running','paused') ORDER BY id DESC LIMIT 1", (c["handle"],))
         c["waiting"] = None
@@ -107,10 +110,36 @@ def overview():
             c["waiting"] = w; c["run_id"] = q["id"]
     videos = sum((f.stat().st_size for f in DATA_ROOT.glob("*/videos/*.mp4")), 0)
     free = shutil.disk_usage(DATA_ROOT).free
+    used = _used_bytes([c["handle"] for c in clinics])
     recent = db.rows("SELECT id, clinic, started, finished, status, stage FROM runs ORDER BY id DESC LIMIT 8")
     return {"clinics": clinics, "totals": {"clinics": len(clinics), "reels": sum(c["reels_total"] or 0 for c in clinics),
-            "analysed": sum(c["analysed"] or 0 for c in clinics), "video_bytes": videos, "free_bytes": free},
+            "analysed": sum(c["analysed"] or 0 for c in clinics), "video_bytes": videos, "used_bytes": used, "free_bytes": free},
             "recent_runs": recent, "settings": db.get_settings(), "data_root": str(DATA_ROOT), "specialities": all_specialities(), "langs": LANG_NAMES}
+
+
+_used = {"at": 0.0, "bytes": 0}
+
+
+def _used_bytes(handles: list[str]) -> int:
+    """Everything Reely keeps on disk for its accounts and clients: videos, transcripts, notes, client files and the
+    database. Speech models are not counted (Settings lists them). Walking the folders takes a moment, so the figure
+    is kept for half a minute."""
+    import os
+    from config import DB_PATH, SUPPORT_DIR
+    if time.time() - _used["at"] < 30:
+        return _used["bytes"]
+    total = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    for root in [DATA_ROOT / h for h in handles if h] + [SUPPORT_DIR / "clients"]:
+        if not root.is_dir():
+            continue
+        for dp, _dirs, files in os.walk(root):
+            for f in files:
+                try:
+                    total += os.lstat(os.path.join(dp, f)).st_size
+                except OSError:
+                    pass
+    _used.update(at=time.time(), bytes=total)
+    return total
 
 
 def all_specialities() -> list[str]:
@@ -781,7 +810,9 @@ def clinic_videos(handle: str, body: VideosBody):
     missing = db.rows("SELECT shortcode FROM reels WHERE clinic=? AND (video_file IS NULL OR video_file='') "
                       "ORDER BY like_rate DESC NULLS LAST", (handle,))
     idx = {r["shortcode"]: r for r in index_mod.load_index(d)}
-    todo = [idx[m["shortcode"]] for m in missing if m["shortcode"] in idx]
+    from pipeline import failures as _fl
+    skip = _fl.ignored(d)                       # dismissed reels are skipped by the download step
+    todo = [idx[m["shortcode"]] for m in missing if m["shortcode"] in idx and m["shortcode"] not in skip]
     if body.count:
         todo = todo[: max(1, body.count)]
     if not todo:

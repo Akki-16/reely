@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, langName, lrColor } from '../api'
@@ -26,7 +26,7 @@ const pct = (v: number | null | undefined) => v == null ? '—' : v.toFixed(2) +
 export default function Categories() {
   const nameOf = useName()
   const { spec, toast, sideOpen } = useContext(Ui)
-  const [clinic, setClinic] = useState('')
+  const [clinic, setClinic] = useState(() => new URLSearchParams(window.location.search).get('account') || '')
   const [view, setView] = useLocal<View>('reely.cat.view', 'grid')
   const [field, setField] = useLocal<CatField>('reely.cat.field', 'format')
   const [rowsF, setRowsF] = useLocal<CatField>('reely.cat.rows', 'format')
@@ -54,7 +54,8 @@ export default function Categories() {
 
   const loadLib = () => api.library().then(rows => setLib(new Set(rows.map(r => r.shortcode)))).catch(() => {})
   useEffect(() => { loadLib(); api.settings().then(s => setTarget(s.translate_to || 'en')).catch(() => {}) }, [])
-  useEffect(() => { setClinic('') }, [spec])
+  const prevSpec = useRef(spec)   // not on first render: a link may open this page on one account (?account=handle)
+  useEffect(() => { if (prevSpec.current !== spec) { prevSpec.current = spec; setClinic('') } }, [spec])
   const load = () => api.categories(scope).then(setData).catch(e => toast(e.message))
   useEffect(() => { setData(null); setSel(null); load() }, [scopeKey])
   useEffect(() => { setSel(null) }, [view])

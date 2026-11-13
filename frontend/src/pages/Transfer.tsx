@@ -72,10 +72,10 @@ function Row({ checked, onChange, title, sub, size, disabled, radio }: { checked
 }
 
 /** Export reference accounts and clients. With `client`, exports just that client from its room. */
-export function ExportSheet({ onClose, client }: { onClose: () => void; client?: number }) {
+export function ExportSheet({ onClose, client, accounts }: { onClose: () => void; client?: number; accounts?: string[] }) {
   const { clinics, spec, words } = useContext(Ui)
   const scoped = clinics.filter(c => !spec || c.speciality === spec)
-  const [sel, setSel] = useState<string[]>(() => client ? [] : scoped.map(c => c.handle))
+  const [sel, setSel] = useState<string[]>(() => client ? [] : accounts || scoped.map(c => c.handle))
   const [cls, setCls] = useState<{ id: number; name: string; color: string | null }[]>([])
   const [csel, setCsel] = useState<number[]>(client ? [client] : [])
   const [cest, setCest] = useState<Record<string, ClientEstimate>>({})
@@ -91,7 +91,7 @@ export function ExportSheet({ onClose, client }: { onClose: () => void; client?:
   useEffect(() => {
     api.clients().then(l => {
       setCls(l.map(c => ({ id: c.id, name: c.name, color: c.color })))
-      if (!client) setCsel(l.filter(c => !spec || c.speciality === spec).map(c => c.id))
+      if (!client && !accounts) setCsel(l.filter(c => !spec || c.speciality === spec).map(c => c.id))
       if (l.length) api.transferEstimateClients(l.map(c => c.id)).then(setCest).catch(() => {})
     }).catch(() => {})
   }, [])

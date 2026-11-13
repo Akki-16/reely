@@ -1,27 +1,34 @@
 import { useContext, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui, useName } from '../App'
-import { api, fmt } from '../api'
+import { HoldButton, SpecialityPicker, Toolbar, Ui, useName } from '../App'
+import { api, fmt, lrColor } from '../api'
 import type { Clinic } from '../api'
 import { I } from '../icons'
 import { ExportSheet, ImportSheet, Sheet } from './Transfer'
 
+/** A sheet opened for one account, from its row menu or its panel. */
+type Dialog = { kind: 'spec' | 'export' | 'delete' | 'failures'; handle: string } | null
+const isActive = (c: Clinic) => ['running', 'queued', 'paused'].includes(c.status)
+const videosRunning = (c: Clinic) => c.video_job?.status === 'running'
+
 export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
   const nameOf = useName()
-  const { viewOnly } = useContext(Ui)
-  const { spec, specialities, refreshClinics } = useContext(Ui)
+  const { viewOnly, spec, specialities, refreshClinics, sideOpen } = useContext(Ui)
   const [data, setData] = useState<any>(null)
   const [handle, setHandle] = useState('')
   const [newSpec, setNewSpec] = useState(spec)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'done' | 'running'>('all')
   const [sheet, setSheet] = useState<'export' | 'import' | null>(null)
-  const [only, setOnly] = useState('')
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const [sel, setSel] = useState<string | null>(null)
+  const [panel, setPanel] = useState<'open' | 'closing' | null>(null)   // the account panel on the right edge
+  const closePanel = () => { setPanel('closing'); setTimeout(() => setPanel(p => p === 'closing' ? null : p), 230) }
 
   const load = () => api.overview().then(d => { setData(d); refreshClinics() }).catch(e => setErr(e.message))
   useEffect(() => { load(); const id = setInterval(load, 5000); return () => clearInterval(id) }, [])
-  useEffect(() => { setNewSpec(spec); setOnly('') }, [spec])
+  useEffect(() => { setNewSpec(spec) }, [spec])
 
   const handles = handle.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean)
   const add = async () => {
@@ -42,40 +49,39 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
   }
 
   const all: Clinic[] = data?.clinics || []
-  const inSpec = all.filter(c => !spec || c.speciality === spec)
-  const clinics = inSpec
-    .filter(c => !only || c.handle === only)
-    .filter(c => filter === 'all' || (filter === 'done' ? c.status === 'done' : ['running', 'queued', 'paused'].includes(c.status)))
+  const clinics = all.filter(c => !spec || c.speciality === spec)
   const t = data?.totals
   const s = data?.settings || {}
-  const sum = (k: 'reels_total' | 'analysed') => inSpec.reduce((a, c) => a + ((c as any)[k] || 0), 0)
+  const sum = (k: 'reels_total' | 'analysed') => clinics.reduce((a, c) => a + ((c as any)[k] || 0), 0)
+  const selC = clinics.find(c => c.handle === sel) || null
+  const dc = dialog ? all.find(c => c.handle === dialog.handle) || null : null
+  useEffect(() => { if (panel && !selC) setPanel(null) }, [panel, selC])   // its account was deleted or filtered away
 
   return (
     <>
       <Toolbar title="Overview">
         <SpecialityPicker />
-        <ClinicPicker value={only} onChange={setOnly} allValue="" />
-        <div className="seg">{(['all', 'done', 'running'] as const).map(f => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}</div>
         <button className="btn plain" onClick={() => setSheet('import')} title="Bring in reference accounts exported from another Mac">{I.download()} Import</button>
         <button className="btn plain" onClick={() => setSheet('export')} title="Pack reference accounts into one file for another Mac" disabled={!data?.clinics?.length}>{I.upload()} Export</button>
       </Toolbar>
       {sheet === 'export' && <ExportSheet onClose={() => setSheet(null)} />}
       {sheet === 'import' && <ImportSheet onClose={() => setSheet(null)} onDone={load} />}
+      {dialog?.kind === 'export' && <ExportSheet accounts={[dialog.handle]} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'spec' && dc && <SpecSheet c={dc} options={specialities} onClose={() => setDialog(null)} onSaved={load} />}
+      {dialog?.kind === 'delete' && dc && <DeleteSheet c={dc} onClose={() => setDialog(null)} onExport={() => setDialog({ kind: 'export', handle: dc.handle })} onDeleted={() => { setDialog(null); setPanel(null); load() }} />}
+      {dialog?.kind === 'failures' && dc && <FailuresSheet handle={dc.handle} active={isActive(dc)} onClose={() => { setDialog(null); load() }} onRun={onRun} />}
+      {panel && selC && <AccountPanel list={clinics} c={selC} setSel={setSel} closing={panel === 'closing'} onClose={closePanel} withSide={sideOpen} onChange={load} onRun={onRun} setDialog={setDialog} />}
       <div className="main"><div className="main-inner">
-        <div>
-          <h1 className="large">{spec ? spec : 'Overview'}</h1>
-          <div className="lead">{t ? `${inSpec.length} reference account${inSpec.length === 1 ? '' : 's'}${spec ? ' in this speciality' : ' indexed'}. ${sum('reels_total').toLocaleString()} reels, ${sum('analysed')} analysed${spec ? '' : `, ${fmt.bytes(t.video_bytes)} on disk`}.` : 'Loading…'}</div>
-        </div>
         {err && <div className="err">{err}</div>}
 
         {viewOnly ? (
           <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <div className="ic tint" style={{ width: 32, height: 32 }}>{I.info({ width: 15, height: 15 })}</div>
-            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import reference accounts here, and download the videos of imported reels from the Videos menu. To add clinics or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
+            <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}><b>This Mac is view-only.</b> Browse, edit, export and import reference accounts here, and download the videos of imported reels from an account's ··· menu. To add accounts or analyse more reels, run Reely on an Apple Silicon Mac, export, and import the file here.</div>
             <button className="btn plain" onClick={() => setSheet('import')}>{I.download()} Import</button>
           </div>
         ) : (
-        <div className="card pad" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="card pad" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '14px 16px' }}>
           <div className="ic tint" style={{ width: 34, height: 34, borderRadius: 10, fontSize: 20, flexBasis: 34 }}>+</div>
           <div className="field" style={{ flex: 1, minWidth: 220, height: 34 }}>
             {I.search()}
@@ -91,40 +97,34 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
         <QueuePanel />
 
         <div className="grid3">
-          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b className="sub" style={{ color: 'var(--c-ink)' }}>Reels indexed</b><div className="ic tint" style={{ width: 30, height: 30 }}>{I.reels({ width: 15, height: 15 })}</div></div>
             <div className="big">{t ? sum('reels_total').toLocaleString() : '—'}</div>
-            <div className="caption">Across {inSpec.length} account{inSpec.length === 1 ? '' : 's'}{spec ? ` · ${spec}` : ''}</div>
+            <div className="caption">Across {clinics.length} account{clinics.length === 1 ? '' : 's'}{spec ? ` · ${spec}` : ''}</div>
           </div>
-          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b className="sub" style={{ color: 'var(--c-ink)' }}>Analysed</b><div className="ic green" style={{ width: 30, height: 30 }}>{I.check({ width: 15, height: 15 })}</div></div>
-            <div className="big">{t ? sum('analysed') : '—'}</div>
+            <div className="big">{t ? sum('analysed').toLocaleString() : '—'}</div>
             <div className="caption">Downloaded, transcribed and annotated</div>
           </div>
-          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--c-tint)', color: '#fff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 13 }}>Disk free</b></div>
+          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--c-tint)', color: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', height: 30 }}><b style={{ fontSize: 13 }}>Disk free</b></div>
             <div className="big">{t ? fmt.bytes(t.free_bytes) : '—'}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.75)' }}>Videos average 2 MB each at 360p</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.8)' }} title="Videos, transcripts, notes and client files, for every speciality. Speech models are listed in Settings.">{t ? <>Reely is using <b style={{ color: '#fff' }}>{fmt.bytes(t.used_bytes ?? t.video_bytes)}</b></> : ' '}</div>
           </div>
         </div>
 
-        <div>
-          <div className="sechead" style={{ textTransform: 'none', fontSize: 19, fontWeight: 700, color: 'var(--c-ink)', letterSpacing: '-.02em' }}>{spec ? `${spec} reference accounts` : 'Reference accounts'}<Link to="/run" className="sub" style={{ color: 'var(--c-tint)', fontWeight: 500, fontSize: 13 }}>All runs</Link></div>
-          <div className="group" style={{ overflow: 'visible' }}>
-            {clinics.map(c => <ClinicRow key={c.handle} c={c} specialities={specialities} showSpec={!spec} onChange={load} onRun={onRun} />)}
-            {clinics.length === 0 && all.length > 0 && <div className="empty">No reference accounts match these filters.</div>}
-            {!viewOnly && <div className="grow">
-              <div className="ic" style={{ border: '1.5px dashed var(--c-fill2)', background: 'transparent', color: 'var(--c-muted)', fontSize: 20 }}>+</div>
-              <div className="fill"><div className="t" style={{ color: 'var(--c-muted)' }}>Add a reference account</div><div className="s" style={{ color: 'var(--c-muted)' }}>Paste one or several Instagram handles above and pick their speciality</div></div>
-            </div>}
-          </div>
+        <div className="acctable">
+          <div className="acchead"><span /><span>Account</span><span>Analysed</span><span>Like-rate</span><span>Last run</span><span /></div>
+          {clinics.map(c => <AccountRow key={c.handle} c={c} on={!!panel && sel === c.handle} onOpen={() => { setSel(c.handle); setPanel('open') }} onChange={load} onRun={onRun} setDialog={setDialog} />)}
+          {data && clinics.length === 0 && <div className="emptyrow" style={{ padding: '22px 18px' }}>{all.length ? `No reference accounts in ${spec} yet.` : 'No reference accounts yet.'}{viewOnly ? ' Import a file exported from another Mac.' : ' Paste an Instagram handle above and press Add & Run.'}</div>}
         </div>
 
-        <StoragePanel clinics={inSpec.map(c => c.handle)} onChange={load} />
+        <StoragePanel clinics={clinics.map(c => c.handle)} onChange={load} />
 
         <div className="grid2">
           <div>
-            <div className="sechead">Recent runs</div>
+            <div className="sechead">Recent runs<Link to="/run" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>All runs</Link></div>
             <div className="group">
               {(data?.recent_runs || []).length === 0 && <div className="grow"><div className="fill sub">No runs yet</div></div>}
               {(data?.recent_runs || []).map((r: any) => (
@@ -150,72 +150,324 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
   )
 }
 
-function ClinicRow({ c, specialities, showSpec, onChange, onRun }: { c: Clinic; specialities: string[]; showSpec: boolean; onChange: () => void; onRun: (id: number) => void }) {
+/** Everything that can be started on one account. Runs open the run page; errors show as a toast. */
+function useAccount(c: Clinic, onRun: (id: number) => void, onChange: () => void) {
+  const nameOf = useName()
+  const { toast, ask, refreshClinics } = useContext(Ui)
+  const [busy, setBusy] = useState(false)
+  const start = async (f: () => Promise<{ run_id: number }>) => {
+    if (busy) return
+    setBusy(true)
+    try { const r = await f(); onRun(r.run_id) } catch (e: any) { toast(e.message) } finally { setBusy(false) }
+  }
+  return {
+    busy,
+    update: () => start(() => api.startRun(c.handle)),
+    more: (n: number | null) => start(() => api.more(c.handle, n)),
+    refresh: () => start(() => api.refreshStats(c.handle)),
+    recheck: () => start(() => api.recheck(c.handle)),
+    retry: () => start(() => api.retry(c.handle)),
+    videos: async (n: number | null) => { try { await api.clinicVideos(c.handle, n); onChange() } catch (e: any) { toast(e.message) } },
+    rename: async () => {
+      const n = await ask({ title: 'Rename this account', label: `Name for @${c.handle}`, value: nameOf(c.handle) === c.handle ? '' : nameOf(c.handle), placeholder: c.handle, optional: true, ok: 'Save',
+        note: 'Shown everywhere in Reely in place of the Instagram handle. Leave it empty to go back to the handle. Files, exports and links keep using the handle.' })
+      if (n === null) return
+      try { await api.editClinic(c.handle, { display_name: n }); refreshClinics(); onChange() } catch (e: any) { toast(e.message) }
+    },
+  }
+}
+
+/** How many transcripts of an account end well before their video does; asked only while a menu or panel shows it. */
+function useShort(handle: string, on: boolean) {
+  const [short, setShort] = useState<{ count: number; with_video: number } | null>(null)
+  useEffect(() => { setShort(null); if (on) api.recheckCount(handle).then(setShort).catch(() => {}) }, [handle, on])
+  return short
+}
+
+/** 50 · 100 · 200 · All · other…: how many of the remaining items to take. */
+function CountChips({ steps, left, onPick }: { steps: number[]; left: number; onPick: (n: number | null) => void }) {
+  const [other, setOther] = useState(false)
+  const [v, setV] = useState('')
+  const n = parseInt(v, 10)
+  if (other) return (
+    <form className="countchips" onSubmit={e => { e.preventDefault(); if (n > 0) onPick(Math.min(n, left)) }}>
+      <input type="number" min={1} max={left} autoFocus value={v} onChange={e => setV(e.target.value)} placeholder="How many" aria-label="How many"
+        onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setOther(false) } }} />
+      <button className="btn sm" type="submit" disabled={!(n > 0)}>Go</button>
+      <button className="cchip" type="button" onClick={() => setOther(false)}>Cancel</button>
+    </form>
+  )
+  return (
+    <div className="countchips">
+      {steps.filter(x => x < left).map(x => <button key={x} className="cchip" onClick={() => onPick(x)}>{x}</button>)}
+      <button className="cchip all" onClick={() => onPick(null)}>All {left.toLocaleString()}</button>
+      <button className="cchip other" onClick={() => setOther(true)}>other…</button>
+    </div>
+  )
+}
+
+function AccountRow({ c, on, onOpen, onChange, onRun, setDialog }: { c: Clinic; on: boolean; onOpen: () => void; onChange: () => void; onRun: (id: number) => void; setDialog: (d: Dialog) => void }) {
   const nameOf = useName()
   const { viewOnly } = useContext(Ui)
-  const [busy, setBusy] = useState(false)
-  const [typing, setTyping] = useState(false)
-  const [draft, setDraft] = useState('')
-  const save = async (v: string) => { setTyping(false); if ((v || null) !== (c.speciality || null)) { await api.editClinic(c.handle, { speciality: v.trim() || null }); onChange() } }
-  const [failOpen, setFailOpen] = useState(false)
-  const active = ['running', 'queued', 'paused'].includes(c.status)
-  const status = c.status === 'done' ? <span className="pill green"><span className="dot" />Done</span>
-    : c.status === 'queued' ? <span className="pill grey" title={c.waiting || 'Queued'}><span className="dot off" />Queued</span>
-    : c.status === 'paused' ? <span className="pill amber">Paused</span>
-    : c.status === 'running' ? <span className="pill amber" title={c.waiting || ''}><span className="dot warn" />{c.waiting ? 'Waiting' : 'Running'}</span>
-    : c.status === 'failed' ? <span className="pill red"><span className="dot bad" />Failed</span>
-    : c.status === 'stopped' ? <span className="pill grey">Stopped</span> : <span className="pill grey">Not run</span>
-  const { ask, refreshClinics, toast } = useContext(Ui)
-  const rename = async () => {
-    const n = await ask({ title: 'Rename this account', label: `Name for @${c.handle}`, value: nameOf(c.handle) === c.handle ? '' : nameOf(c.handle), placeholder: c.handle, optional: true, ok: 'Save',
-      note: 'Shown everywhere in Reely in place of the Instagram handle. Leave it empty to go back to the handle. Files, exports and links keep using the handle.' })
-    if (n === null) return
-    try { await api.editClinic(c.handle, { display_name: n }); refreshClinics(); onChange() } catch (e: any) { toast(e.message) }
-  }
-  const run = async () => {
-    setBusy(true)
-    try { const r = await api.startRun(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) }
+  const act = useAccount(c, onRun, onChange)
+  const name = nameOf(c.handle)
+  const total = c.reels_total || 0
+  const quiet = (e: React.MouseEvent) => e.stopPropagation()   // controls inside the row do not open the panel
+  const status = () => {
+    if (videosRunning(c)) return <><span className="pill tint" title={c.video_job!.note}>Videos {c.video_job!.done}/{c.video_job!.total ?? '…'}</span><button className="btn plain sm" onClick={() => api.clinicVideosStop(c.handle).then(onChange)}>Stop</button></>
+    if (isActive(c)) return <>
+      {c.status === 'queued' ? <span className="pill grey" title={c.waiting || 'Queued'}><span className="dot off" />Queued</span>
+        : c.status === 'paused' ? <span className="pill amber">Paused</span>
+        : <span className="pill amber" title={c.waiting || ''}><span className="dot warn" />{c.waiting ? 'Waiting' : 'Running'}</span>}
+      {c.run_id && <Link to={`/run/${c.run_id}`} className="btn plain sm">View run</Link>}
+    </>
+    if (c.status === 'not_run' && !viewOnly) return <button className="btn sm" disabled={act.busy} onClick={act.update} title="Scrape, download and analyse">Run</button>
+    const [dot, word] = c.status === 'done' ? ['', c.last_run || !c.imported ? 'Done' : 'Imported'] : c.status === 'failed' ? ['bad', 'Failed'] : c.status === 'stopped' ? ['off', 'Stopped'] : ['off', 'Not run']
+    const when = c.last_run || (c.status === 'done' ? c.imported?.at : null)
+    return <><span className={'dot ' + dot} />{word}{when ? ` · ${fmt.date(when)}` : ''}</>
   }
   return (
-    <div className="grow">
-      <div className="ic solid" style={{ width: 40, height: 40, borderRadius: 11, fontSize: 15, fontWeight: 700, background: 'linear-gradient(180deg,#7C5CF0,#5B2BD9)' }}>{(nameOf(c.handle)[0] || '?').toUpperCase()}</div>
-      <div className="fill">
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <Link to={`/reels/${c.handle}`} className="t" style={{ color: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(c.handle)}</Link>
-          {nameOf(c.handle) !== c.handle && <span className="caption" style={{ whiteSpace: 'nowrap' }}>@{c.handle}</span>}
-          <button className="infobtn" title="Rename this account; the name is used everywhere in Reely" aria-label={`Rename ${c.handle}`} onClick={rename}>{I.pencil({ width: 11, height: 11 })}</button>
-        </span>
-        <div className="s">{(c.reels_total || 0).toLocaleString()} reels · {c.downloaded ?? c.analysed} downloaded · {c.analysed} analysed{c.top_views ? ` · top reel ${fmt.n(c.top_views)}` : ''}{c.median_like_rate != null ? ` · median like-rate ${c.median_like_rate.toFixed(2)}%` : ''}</div>
-        {(c.waiting || (c.failed || 0) > 0) && <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+    <div className={'accrow' + (on ? ' on' : '')} role="button" tabIndex={0} aria-label={`Open ${name}`} onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) onOpen() }}>
+      <div className="ic solid" style={{ width: 38, height: 38, flexBasis: 38, borderRadius: 11, fontSize: 15, fontWeight: 700, background: 'linear-gradient(180deg,#7C5CF0,#5B2BD9)' }}>{(name[0] || '?').toUpperCase()}</div>
+      <div style={{ minWidth: 0 }}>
+        <div className="accname">{name}</div>
+        <div className="accsub">{total.toLocaleString()} reels{c.top_views ? ` · top reel ${fmt.n(c.top_views)}` : ''}{!c.speciality && <> · <button className="linkbtn" style={{ fontSize: 12.5 }} onClick={e => { quiet(e); setDialog({ kind: 'spec', handle: c.handle }) }}>Set speciality</button></>}</div>
+        {(c.waiting || (c.failed || 0) > 0) && <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
           {c.waiting && <span className="caption" style={{ color: 'var(--c-amber)' }}>{c.waiting}</span>}
-          {(c.failed || 0) > 0 && <button className="linkbtn" style={{ color: 'var(--c-red)' }} onClick={() => setFailOpen(true)}>{c.failed} failed · review</button>}
+          {(c.failed || 0) > 0 && <button className="linkbtn" style={{ color: 'var(--c-red)' }} onClick={e => { quiet(e); setDialog({ kind: 'failures', handle: c.handle }) }}>{c.failed} failed · review</button>}
         </div>}
-        {failOpen && <FailuresSheet handle={c.handle} active={active} onClose={() => { setFailOpen(false); onChange() }} onRun={onRun} />}
       </div>
-      <div className="slot" style={{ width: 200 }}>{(showSpec || !c.speciality) && (typing
-        ? <div className="field" style={{ height: 28, width: 200 }}>
-            <SpecInput value={draft} onChange={setDraft} options={specialities} placeholder="Type a speciality" autoFocus
-              onEnter={() => save(draft)} onEscape={() => setTyping(false)} onBlur={() => save(draft)} />
-          </div>
-        : <select className={'chipsel' + (c.speciality ? '' : ' empty')} value={c.speciality || ''} title="Speciality" aria-label={`Speciality of ${c.handle}`}
-            onChange={e => { if (e.target.value === '__new') { setDraft(''); setTyping(true) } else save(e.target.value) }}>
-            <option value="">Set speciality…</option>
-            {specialities.map(x => <option key={x} value={x}>{x}</option>)}
-            <option value="__new">Type a new one…</option>
-          </select>)}</div>
-      <div className="slot" style={{ width: 92 }}>{c.video_job?.status === 'running'
-        ? <span className="pill tint" title={c.video_job.note}><span className="dot" style={{ background: 'var(--c-tint)' }} />{c.video_job.done}/{c.video_job.total}</span>
-        : status}</div>
-      <div className="caption slot" style={{ width: 52, justifyContent: 'flex-end' }}>{c.last_run ? fmt.date(c.last_run) : ''}</div>
-      <div className="slot" style={{ width: 250, justifyContent: 'flex-end', gap: 6 }}>
-        {c.video_job?.status === 'running' && <button className="btn plain sm" onClick={() => api.clinicVideosStop(c.handle).then(onChange)} title={c.video_job.note}>Stop videos</button>}
-        {!active && c.video_job?.status !== 'running' && (viewOnly ? (c.missing_videos || 0) > 0 : (c.reels_total || 0) > 0) && <MoreMenu c={c} busy={busy} viewOnly={viewOnly} onChange={onChange} onRun={onRun} onStart={async n => { setBusy(true); try { const r = await api.more(c.handle, n); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) } }} />}
-        {!active && !viewOnly && <button className="btn plain sm" disabled={busy} onClick={run} title={c.status === 'not_run' ? 'Scrape, download and analyse' : 'Run again; a scrape under a day old and files on disk are reused'}>{c.status === 'not_run' ? 'Run' : 'Re-run'}</button>}
-        {active && c.run_id && <Link to={`/run/${c.run_id}`} className="btn plain sm">View run</Link>}
-        {!active && <HoldButton className="btn plain sm" label="Delete" holdLabel="Hold…" ms={4000} onHold={async () => { await api.deleteClinic(c.handle, true); onChange() }} />}
+      <div>
+        {total > 0 ? <>
+          <div style={{ fontSize: 12.5 }}><b>{(c.analysed || 0).toLocaleString()}</b> <span style={{ color: 'var(--c-sub)' }}>of {total.toLocaleString()} analysed</span></div>
+          <div className="accbar"><span style={{ width: `${Math.min(100, Math.round((c.analysed || 0) / total * 100))}%` }} /></div>
+        </> : <span className="caption">Nothing scraped yet</span>}
       </div>
-      <Link to={`/reels/${c.handle}`} aria-label="Open">{I.fwd({ className: 'chev' })}</Link>
+      <div>{c.median_like_rate != null ? <><b style={{ color: lrColor(c.median_like_rate), fontSize: 14.5 }}>{c.median_like_rate.toFixed(2)}%</b><div className="caption" style={{ fontSize: 11.5 }}>median like-rate</div></> : <span className="caption">—</span>}</div>
+      <div className="accstatus" onClick={isActive(c) || videosRunning(c) || c.status === 'not_run' ? quiet : undefined}>{status()}</div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={quiet}><AccountMenu c={c} act={act} setDialog={setDialog} /></div>
     </div>
+  )
+}
+
+/** The ··· menu on a row: every action for the account, without leaving the list. */
+function AccountMenu({ c, act, setDialog }: { c: Clinic; act: ReturnType<typeof useAccount>; setDialog: (d: Dialog) => void }) {
+  const { viewOnly } = useContext(Ui)
+  const [open, setOpen] = useState(false)
+  const short = useShort(c.handle, open && !viewOnly)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', h); document.addEventListener('keydown', k)
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', k) }
+  }, [open])
+  const active = isActive(c), vids = videosRunning(c)
+  const canRun = !viewOnly && !active
+  const left = canRun && !vids ? c.remaining || 0 : 0
+  const missing = !active && !vids ? c.missing_videos || 0 : 0
+  const item = (label: string, meta: string, f: () => void, title?: string) => (
+    <button className="row" title={title} onClick={() => { setOpen(false); f() }}><span>{label}</span>{meta && <span className="caption">{meta}</span>}</button>
+  )
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button className={'iconbtn accdots' + (open ? ' on' : '')} aria-label={`Actions for ${c.handle}`} aria-expanded={open} disabled={act.busy} onClick={() => setOpen(v => !v)}>···</button>
+      {open && (
+        <div className="card menu accmenu">
+          {left > 0 && <>
+            <div className="menuhead">Analyse more reels · {left.toLocaleString()} left</div>
+            <div style={{ padding: '3px 8px 8px' }} title="Next by views. Keeps the scrape and everything already downloaded, transcribed and annotated."><CountChips steps={[50, 100, 200]} left={left} onPick={n => { setOpen(false); act.more(n) }} /></div>
+            <div className="menurule" />
+          </>}
+          {(canRun || missing > 0) && <>
+            <div className="menuhead">Keep it current</div>
+            {canRun && item(c.status === 'not_run' ? 'Run' : 'Update', 'new reels + numbers', act.update, 'Scrape, download and analyse again. A scrape under a day old and files on disk are reused.')}
+            {canRun && (c.reels_total || 0) > 0 && item('Refresh views and likes', '', act.refresh, 'Re-scrape view counts and re-fetch likes. No videos are downloaded.')}
+            {canRun && short && short.with_video > 0 && item('Re-check transcripts', `${short.with_video} stop early`, act.recheck, 'Listens again to reels whose transcript ends well before the video does. Where more speech is found, the transcript is replaced and the reel is annotated again. Reels you edited keep your labels.')}
+            {missing > 0 && item('Download missing videos', missing.toLocaleString(), () => act.videos(null), 'For analysed reels with no video here, such as an import without videos. Transcripts and notes stay as they are.')}
+            {canRun && (c.pending || 0) > 0 && item('Download remaining', String(c.pending), act.retry, 'Reels a download stage left for later because Instagram was limiting this network')}
+            {canRun && (c.failed || 0) > 0 && item('Retry failed', String(c.failed), act.retry)}
+            <div className="menurule" />
+          </>}
+          <div className="menuhead">Account</div>
+          {active && c.run_id && <Link className="row" to={`/run/${c.run_id}`}><span>View run</span></Link>}
+          {item('Rename…', '', act.rename)}
+          {item('Change speciality…', c.speciality ? '' : 'not set', () => setDialog({ kind: 'spec', handle: c.handle }))}
+          {item('Export…', '', () => setDialog({ kind: 'export', handle: c.handle }))}
+          {!active && <>
+            <div className="menurule" />
+            <button className="row danger" onClick={() => { setOpen(false); setDialog({ kind: 'delete', handle: c.handle }) }}><span>Delete account…</span></button>
+          </>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The account panel: slides in from the right edge over a dimmed page, like the reel panel. ← → step through the
+ *  accounts, Esc, the scrim or ✕ close it. Rendered on document.body because .main-inner animates. */
+function AccountPanel({ list, c, setSel, closing, onClose, withSide, onChange, onRun, setDialog }: { list: Clinic[]; c: Clinic; setSel: (h: string) => void; closing: boolean; onClose: () => void; withSide: boolean; onChange: () => void; onRun: (id: number) => void; setDialog: (d: Dialog) => void }) {
+  const nameOf = useName()
+  const i = list.findIndex(x => x.handle === c.handle)
+  const go = (d: number) => { const n = list[i + d]; if (n) setSel(n.handle) }
+  const goRef = useRef(go); goRef.current = go
+  const closeRef = useRef(onClose); closeRef.current = onClose
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)) return
+      if (document.querySelector('.sheet-back')) return          // a sheet on top handles its own keys
+      if (e.key === 'Escape') { e.preventDefault(); closeRef.current() }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goRef.current(1) }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); goRef.current(-1) }
+    }
+    document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k)
+  }, [])
+  return createPortal(
+    <>
+      <div className={'reelscrim' + (withSide ? ' withside' : '') + (closing ? ' out' : '')} onMouseDown={onClose} aria-hidden />
+      <div className={'reelpanel accpanel' + (closing ? ' out' : '')} role="dialog" aria-label={`Account ${nameOf(c.handle)}`}>
+        <div className="accpanel-body">
+          <div className="reelpanel-head" data-tauri-drag-region>
+            <button className="iconbtn" aria-label="Previous account" disabled={i <= 0} onClick={() => go(-1)}>{I.back({ width: 13, height: 13 })}</button>
+            <button className="iconbtn" aria-label="Next account" disabled={i < 0 || i >= list.length - 1} onClick={() => go(1)}>{I.fwd({ width: 13, height: 13 })}</button>
+            <span className="caption" style={{ color: 'var(--c-sub)', fontSize: 12.5 }}>{i + 1} of {list.length}</span>
+            <span className="spacer" data-tauri-drag-region />
+            <span className="caption hint">← → to move · Esc to close</span>
+            <button className="iconbtn" aria-label="Close" onClick={onClose}>✕</button>
+          </div>
+          <AccountDetail key={c.handle} c={c} onChange={onChange} onRun={onRun} setDialog={setDialog} />
+        </div>
+      </div>
+    </>, document.body)
+}
+
+function AccountDetail({ c, onChange, onRun, setDialog }: { c: Clinic; onChange: () => void; onRun: (id: number) => void; setDialog: (d: Dialog) => void }) {
+  const nameOf = useName()
+  const { viewOnly } = useContext(Ui)
+  const act = useAccount(c, onRun, onChange)
+  const short = useShort(c.handle, !viewOnly)
+  const name = nameOf(c.handle)
+  const active = isActive(c), vids = videosRunning(c)
+  const canRun = !viewOnly && !active && !vids
+  const total = c.reels_total || 0
+  const left = canRun ? c.remaining || 0 : 0
+  const missing = !active && !vids ? c.missing_videos || 0 : 0
+  const fresh = c.status === 'not_run'
+  const row = (t: string, s: string, meta: string, f: () => void, primary = false) => (
+    <div className="actrow" key={t}>
+      <div className="fill"><b>{t}</b><div className="s">{s}</div></div>
+      {meta && <span className="caption" style={{ whiteSpace: 'nowrap' }}>{meta}</span>}
+      <button className={'btn sm' + (primary ? '' : ' plain')} disabled={act.busy} onClick={f}>Start</button>
+    </div>
+  )
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 20 }}>
+        <div className="ic solid" style={{ width: 52, height: 52, flexBasis: 52, borderRadius: 15, fontSize: 21, fontWeight: 700, background: 'linear-gradient(180deg,#7C5CF0,#5B2BD9)' }}>{(name[0] || '?').toUpperCase()}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div className="accpanel-name"><span>{name}</span><button className="linkbtn" style={{ fontSize: 12 }} onClick={act.rename}>Rename</button></div>
+          <div className="sub" style={{ marginTop: 2 }}>@{c.handle}{c.speciality ? ` · ${c.speciality}` : ''} · <a href={`https://www.instagram.com/${c.handle}/`} target="_blank" rel="noreferrer">Instagram {I.ext()}</a></div>
+        </div>
+      </div>
+      <div className="acctiles">
+        <div><b>{total.toLocaleString()}</b><span>reels</span></div>
+        <div><b>{(c.analysed || 0).toLocaleString()}</b><span>analysed</span></div>
+        <div><b style={c.median_like_rate != null ? { color: lrColor(c.median_like_rate) } : undefined}>{c.median_like_rate != null ? c.median_like_rate.toFixed(2) + '%' : '—'}</b><span>like-rate</span></div>
+        <div><b>{c.top_views ? fmt.n(c.top_views) : '—'}</b><span>top reel</span></div>
+      </div>
+      {total > 0 && <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 5 }}><span><b>{(c.analysed || 0).toLocaleString()}</b> of {total.toLocaleString()} reels analysed</span>{!viewOnly && (c.remaining || 0) > 0 && <span className="caption" title="Scraped reels that are not downloaded yet">{(c.remaining || 0).toLocaleString()} left</span>}</div>
+        <div className="accbar big"><span style={{ width: `${Math.min(100, Math.round((c.analysed || 0) / total * 100))}%` }} /></div>
+      </div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Link className="btn" to={`/reels/${c.handle}`}>Open reels</Link>
+        <Link className="btn plain" to={`/insights/${c.handle}`}>Insights</Link>
+        <Link className="btn plain" to={`/categories?account=${encodeURIComponent(c.handle)}`}>Categories</Link>
+      </div>
+      {active && <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1, fontSize: 13, lineHeight: 1.45 }}><b>{c.status === 'queued' ? 'Waiting in the queue' : c.status === 'paused' ? 'Run paused' : 'A run is in progress'}</b>{c.waiting ? <div className="caption" style={{ color: 'var(--c-amber)' }}>{c.waiting}</div> : <div className="caption">New actions can start when it finishes.</div>}</div>
+        {c.run_id && <Link to={`/run/${c.run_id}`} className="btn plain sm">View run</Link>}
+      </div>}
+      {vids && <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1, fontSize: 13, lineHeight: 1.45 }}><b>Downloading videos · {c.video_job!.done} of {c.video_job!.total ?? '…'}</b><div className="caption">{c.video_job!.note}</div></div>
+        <button className="btn plain sm" onClick={() => api.clinicVideosStop(c.handle).then(onChange)}>Stop</button>
+      </div>}
+      {c.video_job && !vids && <div className="caption" style={{ marginTop: -6 }}>Last video download: {c.video_job.status === 'error' ? 'stopped with an error · ' : ''}{c.video_job.note}</div>}
+      {(c.failed || 0) > 0 && <div className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1, fontSize: 13 }}><b style={{ color: 'var(--c-red)' }}>{c.failed} reel{c.failed === 1 ? '' : 's'} failed</b><div className="caption">See why, then retry or dismiss them.</div></div>
+        <button className="btn plain sm" onClick={() => setDialog({ kind: 'failures', handle: c.handle })}>Review</button>
+      </div>}
+      {(canRun || missing > 0) && <div>
+        <div className="sechead">Do more with this account</div>
+        <div className="actlist">
+          {canRun && row(fresh ? 'Run' : 'Update', fresh ? 'Scrape, download and analyse the top reels' : 'Get new reels and fresh numbers', c.last_run ? `last run ${fmt.date(c.last_run)}` : '', act.update, true)}
+          {left > 0 && <div className="actrow">
+            <div className="fill"><b>Analyse more reels</b><div className="s">Next by views · keeps what is done</div></div>
+            <CountChips steps={[50, 100, 200]} left={left} onPick={act.more} />
+          </div>}
+          {canRun && total > 0 && row('Refresh views and likes', 'No videos, no transcription', '', act.refresh)}
+          {canRun && short && short.with_video > 0 && row('Re-check transcripts', 'Listen again where the text stops early', `${short.with_video} stop early`, act.recheck)}
+          {missing > 25 ? <div className="actrow">
+            <div className="fill"><b>Download missing videos</b><div className="s">Best like-rate first · {missing.toLocaleString()} missing</div></div>
+            <CountChips steps={[25, 50, 100]} left={missing} onPick={act.videos} />
+          </div> : missing > 0 && row('Download missing videos', 'For analysed reels with no video here', `${missing} missing`, () => act.videos(null))}
+          {canRun && (c.pending || 0) > 0 && row('Download remaining', 'Reels left for later while Instagram was limiting this network', String(c.pending), act.retry)}
+        </div>
+      </div>}
+      <div>
+        <div className="sechead">Account</div>
+        <div className="accstrip">
+          <button onClick={() => setDialog({ kind: 'spec', handle: c.handle })}>Speciality…</button>
+          <button onClick={() => setDialog({ kind: 'export', handle: c.handle })}>Export…</button>
+          <Link to={`/run?account=${encodeURIComponent(c.handle)}`}>Run history</Link>
+          <button className="danger" disabled={active} title={active ? 'Stop the run first' : undefined} onClick={() => setDialog({ kind: 'delete', handle: c.handle })}>Delete…</button>
+        </div>
+      </div>
+      {c.imported && <div className="caption">Imported from {c.imported.from} on {fmt.date(c.imported.at)}{c.imported.videos ? '' : ', without videos'}.</div>}
+    </>
+  )
+}
+
+function SpecSheet({ c, options, onClose, onSaved }: { c: Clinic; options: string[]; onClose: () => void; onSaved: () => void }) {
+  const nameOf = useName()
+  const { toast, refreshClinics } = useContext(Ui)
+  const [v, setV] = useState(c.speciality || '')
+  const save = async () => {
+    try { await api.editClinic(c.handle, { speciality: v.trim() || null }); refreshClinics(); onSaved(); onClose() } catch (e: any) { toast(e.message) }
+  }
+  return (
+    <Sheet title={`Speciality of ${nameOf(c.handle)}`} onClose={onClose}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{options.map(o => <button key={o} className={'chipbtn' + (v === o ? ' on' : '')} onClick={() => setV(o)}>{o}</button>)}</div>
+      <label className="formrow"><span>Or type a new one</span>
+        <div className="field"><input value={v} maxLength={60} placeholder="Speciality" aria-label="Speciality" onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } }} /></div>
+      </label>
+      <div className="caption" style={{ lineHeight: 1.5 }}>Accounts are grouped and compared within their speciality. Leave it empty to clear.</div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button className="btn plain" onClick={onClose}>Cancel</button>
+        <button className="btn" onClick={save} disabled={(v.trim() || null) === (c.speciality || null)}>Save</button>
+      </div>
+    </Sheet>
+  )
+}
+
+function DeleteSheet({ c, onClose, onDeleted, onExport }: { c: Clinic; onClose: () => void; onDeleted: () => void; onExport: () => void }) {
+  const nameOf = useName()
+  const { toast, refreshClinics } = useContext(Ui)
+  return (
+    <Sheet title={`Delete ${nameOf(c.handle)}?`} onClose={onClose}>
+      <div className="sub" style={{ lineHeight: 1.55, color: 'var(--c-ink)' }}>This removes <b>@{c.handle}</b> from Reely: its {(c.reels_total || 0).toLocaleString()} scraped reels, {(c.analysed || 0).toLocaleString()} transcripts and notes, its run history and chat, and its whole folder of videos on this Mac.</div>
+      <div className="caption" style={{ lineHeight: 1.5 }}>This cannot be undone. Export the account first if you might want it back.</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="btn plain" onClick={onExport}>Export first…</button>
+        <span className="spacer" />
+        <button className="btn plain" onClick={onClose}>Cancel</button>
+        <HoldButton className="btn danger" label="Hold to delete" holdLabel="Keep holding…" ms={2000} danger={false}
+          onHold={async () => { try { await api.deleteClinic(c.handle, true); refreshClinics(); onDeleted() } catch (e: any) { toast(e.message) } }} />
+      </div>
+    </Sheet>
   )
 }
 
@@ -228,57 +480,6 @@ function SpecInput({ value, onChange, options, placeholder, autoFocus, onEnter, 
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onEnter?.() } if (e.key === 'Escape') onEscape?.() }} />
       <datalist id="reely-specs">{options.map(o => <option key={o} value={o} />)}</datalist>
     </>
-  )
-}
-
-/** "More" on a scraped clinic: process the next reels by views without re-scraping or re-downloading. */
-function MoreMenu({ c, busy, onStart, onRun, viewOnly, onChange }: { c: Clinic; busy: boolean; onStart: (count: number | null) => void; onRun: (id: number) => void; viewOnly?: boolean; onChange?: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [custom, setCustom] = useState('')
-  const [short, setShort] = useState<{ count: number; with_video: number } | null>(null)
-  useEffect(() => { if (open && !viewOnly) api.recheckCount(c.handle).then(setShort).catch(() => {}) }, [open])
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
-  }, [open])
-  const left = viewOnly ? 0 : c.remaining || 0
-  const missing = c.missing_videos || 0
-  const go = (n: number | null) => { setOpen(false); setCustom(''); onStart(n) }
-  const videos = async (n: number | null) => { setOpen(false); try { await api.clinicVideos(c.handle, n); onChange?.() } catch (e: any) { alert(e.message) } }
-  return (
-    <div style={{ position: 'relative' }} ref={ref}>
-      <button className={'btn plain sm' + (open ? ' on' : '')} disabled={busy} onClick={() => setOpen(v => !v)} title={viewOnly ? `${missing} analysed reels have no video on this Mac` : `${left.toLocaleString()} scraped reels are not downloaded yet`}>{viewOnly ? 'Videos' : 'More'} {I.down({ width: 10, height: 10 })}</button>
-      {open && (
-        <div className="card menu" style={{ width: 230 }}>
-          {left > 0 && <>
-          <div className="caption" style={{ padding: '6px 8px 4px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', fontSize: 10.5 }}>Download and analyse more</div>
-          {[50, 100, 200].filter(n => n < left).map(n => <button key={n} className="row" onClick={() => go(n)}><span>Next {n}</span><span className="caption">by views</span></button>)}
-          <button className="row" onClick={() => go(null)}><span>All remaining</span><span className="caption">{left.toLocaleString()}</span></button>
-          <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0 2px' }} />
-          <form className="row" style={{ gap: 6 }} onSubmit={e => { e.preventDefault(); const n = parseInt(custom, 10); if (n > 0) go(Math.min(n, left)) }}>
-            <span className="caption">Next</span>
-            <input type="number" min={1} max={left} value={custom} onChange={e => setCustom(e.target.value)} placeholder="number" aria-label="How many more reels" style={{ flex: 1, minWidth: 0, border: 0, background: 'var(--c-fill)', borderRadius: 6, padding: '4px 8px', font: 'inherit', fontSize: 12, color: 'inherit' }} />
-            <button className="btn sm" type="submit" disabled={!(parseInt(custom, 10) > 0)} style={{ height: 24, padding: '0 8px' }}>Go</button>
-          </form>
-          <div className="caption" style={{ padding: '4px 8px 6px', lineHeight: 1.4 }}>Keeps the scrape and everything already downloaded, transcribed and annotated.</div>
-          <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0 2px' }} />
-          </>}
-          {missing > 0 && <>
-            <div className="caption" style={{ padding: '6px 8px 4px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', fontSize: 10.5 }}>Videos only</div>
-            {[25, 50, 100].filter(n => n < missing).map(n => <button key={'v' + n} className="row" onClick={() => videos(n)}><span>Next {n} videos</span><span className="caption">best like-rate</span></button>)}
-            <button className="row" onClick={() => videos(null)}><span>All missing videos</span><span className="caption">{missing.toLocaleString()}</span></button>
-            <div className="caption" style={{ padding: '4px 8px 6px', lineHeight: 1.4 }}>For analysed reels with no video here, such as an import without videos. Transcripts and notes stay as they are.</div>
-            {!viewOnly && <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0 2px' }} />}
-          </>}
-          {!viewOnly && (c.pending || 0) > 0 && <button className="row" title="Reels a download stage left for later because Instagram was limiting this network" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Download remaining</span><span className="caption">{c.pending}</span></button>}
-          {!viewOnly && (c.failed || 0) > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Retry failed</span><span className="caption">{c.failed}</span></button>}
-          {!viewOnly && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.refreshStats(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Re-scrape view counts and re-fetch likes; no videos are downloaded"><span>Refresh stats</span><span className="caption">views + likes</span></button>}
-          {!viewOnly && short && short.with_video > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.recheck(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Listens again to reels whose transcript ends well before the video does. Where more speech is found, the transcript is replaced and the reel is annotated again. Reels you edited keep your labels."><span>Re-check transcripts</span><span className="caption">{short.with_video} stop early</span></button>}
-        </div>
-      )}
-    </div>
   )
 }
 

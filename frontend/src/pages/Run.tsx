@@ -54,7 +54,7 @@ export default function Run() {
   const { spec, clinics } = useContext(Ui)
   const [queue, setQueue] = useState<any[]>([])
   const [runs, setRuns] = useState<RunT[]>([])
-  const [clinic, setClinic] = useState('_all')
+  const [clinic, setClinic] = useState(() => new URLSearchParams(window.location.search).get('account') || '_all')
   const [tab, setTab] = useState<number | 'history' | null>(id ? Number(id) : null)
   const [openId, setOpenId] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
