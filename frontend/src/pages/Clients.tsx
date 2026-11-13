@@ -1,14 +1,15 @@
 import { useContext, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Toolbar, Ui } from '../App'
-import { api, fmt, LANGS } from '../api'
+import { api, clientImage, fmt, LANGS } from '../api'
 import type { ClientSummary } from '../api'
 import { I } from '../icons'
 import { ImportSheet } from './Transfer'
 
 export const SCRIPT_LANGS = ['te', 'hi', 'en', 'ta', 'kn', 'ml', 'mr', 'bn', 'gu']
 
-export function Avatar({ name, color, size = 40, round }: { name: string; color?: string | null; size?: number; round?: boolean }) {
+export function Avatar({ name, color, size = 40, round, src }: { name: string; color?: string | null; size?: number; round?: boolean; src?: string | null }) {
+  if (src) return <img className="avatar" src={src} alt="" style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: round ? '50%' : size * .28, objectFit: 'cover' }} />
   const ini = name.replace(/^(dr\.?|doctor)\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?'
   return <span className="avatar" style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: round ? '50%' : size * .28, background: color || 'var(--c-tint)', fontSize: size * (round ? .36 : .4) }}>{round ? ini : name.slice(0, 1).toUpperCase()}</span>
 }
@@ -46,7 +47,7 @@ export default function Clients() {
             {shown.map(c => (
               <button key={c.id} className="card clientcard" onClick={() => nav(`/clients/${c.id}`)}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <Avatar name={c.name} color={c.color} size={42} />
+                  <Avatar name={c.name} color={c.color} size={42} src={clientImage(c)} />
                   <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
                     <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: '-.015em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
                     <div className="caption">{[c.speciality, c.city].filter(Boolean).join(' · ') || 'No speciality set'}</div>

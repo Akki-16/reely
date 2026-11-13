@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
-import { Ui } from '../App'
+import { Ui, useName } from '../App'
 import { useNavigate } from 'react-router-dom'
 import { api, fmt, isTauri } from '../api'
 import type { ClientEstimate } from '../api'
@@ -132,7 +132,7 @@ export function ExportSheet({ onClose, client }: { onClose: () => void; client?:
           <div className="sechead" style={{ padding: '0 2px 6px' }}><span>Reference accounts · {sel.length} of {clinics.length}</span>
             <button className="linkbtn" onClick={() => setSel(sel.length === clinics.length ? [] : clinics.map(c => c.handle))}>{sel.length === clinics.length ? 'Select none' : 'Select all'}</button></div>
           <div className="group checklist" style={{ boxShadow: 'none', background: 'var(--c-bg)', maxHeight: 190, overflow: 'auto' }}>
-            {clinics.map(c => <Row key={c.handle} checked={sel.includes(c.handle)} onChange={() => toggle(c.handle)} disabled={running} title={c.handle}
+            {clinics.map(c => <Row key={c.handle} checked={sel.includes(c.handle)} onChange={() => toggle(c.handle)} disabled={running} title={c.display_name && c.display_name !== c.handle ? <>{c.display_name} <span className="caption" style={{ fontWeight: 400 }}>@{c.handle}</span></> : c.handle}
               sub={`${c.speciality || 'No speciality'} · ${(c.reels_total || 0).toLocaleString()} reels · ${c.analysed} analysed`}
               size={est[c.handle] ? fmt.bytes(est[c.handle].core + PARTS.reduce((a, p) => a + (inc[p.key] ? est[c.handle][p.key] : 0), 0)) : ''} />)}
           </div>
@@ -196,6 +196,7 @@ export function ExportSheet({ onClose, client }: { onClose: () => void; client?:
 }
 
 export function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const nameOf = useName()
   const { words } = useContext(Ui)
   const nav = useNavigate()
   const [info, setInfo] = useState<any>(null)
@@ -250,7 +251,7 @@ export function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: 
           {done.clinics.map((c: any) => (
             <div key={c.handle} className="notebox" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <div className={'ic ' + (c.skipped ? '' : 'green')} style={{ width: 30, height: 30 }}>{c.skipped ? '!' : I.check({ width: 14, height: 14 })}</div>
-              <div style={{ flex: 1 }}><b style={{ fontSize: 13 }}>{c.handle}</b><div className="caption">{c.skipped ? `Skipped · ${c.skipped}` : `${c.added} files added${c.kept ? ` · ${c.kept} already here, kept` : ''}`}</div></div>
+              <div style={{ flex: 1 }}><b style={{ fontSize: 13 }}>{nameOf(c.handle)}</b><div className="caption">{c.skipped ? `Skipped · ${c.skipped}` : `${c.added} files added${c.kept ? ` · ${c.kept} already here, kept` : ''}`}</div></div>
             </div>
           ))}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn" onClick={onClose}>Done</button></div>

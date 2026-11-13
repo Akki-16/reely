@@ -142,7 +142,7 @@ def _load(cid: int) -> dict:
             "brief": json.loads(r["brief"]) if r["brief"] else None, "brief_meta": json.loads(r["brief_meta"] or "{}")}
 
 
-_DOC_KEYS = ("speciality", "city", "languages", "color", "people", "branches", "sources", "uid")
+_DOC_KEYS = ("speciality", "city", "languages", "color", "people", "branches", "sources", "uid", "image")
 
 
 def _save(cid: int, doc: dict):
@@ -819,7 +819,7 @@ def _summary(r: dict) -> dict:
                     "(SELECT COUNT(*) FROM scripts WHERE client_id=? AND status='review') review", (r["id"],) * 4)
     meta = json.loads(r["brief_meta"] or "{}")
     return {"id": r["id"], "name": r["name"], "speciality": d.get("speciality"), "city": d.get("city"),
-            "languages": d.get("languages") or [], "color": d.get("color"), "lead": lead["name"] if lead else None,
+            "languages": d.get("languages") or [], "color": d.get("color"), "image": d.get("image"), "lead": lead["name"] if lead else None,
             "people": len(d.get("people") or []), "branches": len(d.get("branches") or []),
             "has_brief": bool(r["brief"]), "brief_locked": bool(meta.get("locked")), "updated_at": r["updated_at"], **counts}
 
@@ -896,6 +896,55 @@ def delete_client(cid: int):
         c.execute("DELETE FROM plans WHERE client_id=?", (cid,))
     shutil.rmtree(ROOT / str(cid), ignore_errors=True)
     return {"ok": True}
+
+
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic")
+
+
+class ImageBody(BaseModel):
+    path: str
+
+
+@router.post("/api/clients/{cid}/image")
+def set_image(cid: int, body: ImageBody):
+    doc = _load(cid)
+    src = Path(body.path).expanduser()
+    if not src.is_file() or src.suffix.lower() not in IMAGE_EXT:
+        raise HTTPException(400, "Choose a PNG, JPG, WebP, GIF or HEIC image")
+    f = folder(cid)
+    for old in f.glob("avatar*"):
+        old.unlink()
+    # the name carries a stamp so the app's image cache sees the change
+    name = f"avatar-{int(time.time())}{src.suffix.lower()}"
+    if src.suffix.lower() == ".heic":
+        name = name[:-5] + ".jpg"
+        subprocess.run(["sips", "-s", "format", "jpeg", str(src), "--out", str(f / name)], capture_output=True, timeout=60)
+        if not (f / name).exists():
+            raise HTTPException(400, "That image could not be converted")
+    else:
+        shutil.copy2(src, f / name)
+    doc["image"] = name
+    _save(cid, doc)
+    return get_client(cid)
+
+
+@router.delete("/api/clients/{cid}/image")
+def remove_image(cid: int):
+    doc = _load(cid)
+    for old in folder(cid).glob("avatar*"):
+        old.unlink()
+    doc["image"] = None
+    _save(cid, doc)
+    return get_client(cid)
+
+
+@router.get("/api/clients/{cid}/image/{name}")
+def get_image(cid: int, name: str):
+    from fastapi.responses import FileResponse
+    p = ROOT / str(cid) / name
+    if "/" in name or not name.startswith("avatar") or not p.is_file():
+        raise HTTPException(404)
+    return FileResponse(p, headers={"Cache-Control": "max-age=31536000, immutable"})
 
 
 class FilesBody(BaseModel):

@@ -1,12 +1,13 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui } from '../App'
+import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt } from '../api'
 import { I } from '../icons'
 
 const ALL = '_all'
 
 export default function Insights() {
+  const nameOf = useName()
   const { handle: hParam } = useParams()
   const { spec, clinics } = useContext(Ui)
   const [handle, setHandle] = useState(hParam || localStorage.getItem('reely.insights.clinic') || ALL)
@@ -30,7 +31,7 @@ export default function Insights() {
     if (handle !== ALL && tab === 'report') setTab('summary')
   }, [handle, spec])
   const isAll = handle === ALL
-  const scopeLabel = isAll ? (spec ? `${spec} accounts` : 'all reference accounts') : handle
+  const scopeLabel = isAll ? (spec ? `${spec} accounts` : 'all reference accounts') : nameOf(handle)
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [chat, asking])
   const [elapsed, setElapsed] = useState(0)
   const [askOpen, setAskOpenState] = useState(() => localStorage.getItem('reely.ask.open') !== '0')
@@ -143,7 +144,7 @@ export default function Insights() {
                   {(s?.top_like_rate || []).slice(0, 6).map((r: any) => (
                     <div key={r.shortcode} className="grow">
                       <div className="lr" style={{ color: 'var(--c-green)' }}>{r.like_rate_pct?.toFixed(2)}%</div>
-                      <div className="fill"><div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_spoken_original}</div><div className="s">{[isAll ? r.clinic : null, r.format, fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}</div></div>
+                      <div className="fill"><div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_spoken_original}</div><div className="s">{[isAll ? nameOf(r.clinic) : null, r.format, fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}</div></div>
                     </div>
                   ))}
                   {hooks.length > 0 && <div className="grow" style={{ flexWrap: 'wrap', gap: 6 }}><span className="caption" style={{ width: '100%' }}>Hook types</span>{hooks.map(([k, v]) => <span key={k} className="chip">{k} · {v}</span>)}</div>}

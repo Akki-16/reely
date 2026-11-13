@@ -125,6 +125,9 @@ def pack(z, ids: list[int], handles: list[str], inc: dict, ref_mode: str, progre
         z.writestr(f"clients/{uid}/client.json", json.dumps(payload, ensure_ascii=False), compress_type=8)
         f = C.folder(cid)
         files_n = 0
+        for p in f.glob("avatar*"):
+            if p.is_file():
+                z.write(p, f"clients/{uid}/avatar/{p.name}", compress_type=8)
         for sub in (["files"] if inc.get("client_files") else []) + ["read"]:
             for p in sorted((f / sub).glob("*")):
                 if p.is_file():
@@ -251,7 +254,7 @@ def import_clients(z, m: dict, uids: list[str] | None, mode: str, progress=None)
                 new = [x for x in data.get(k) or [] if x.get("id") not in have]
                 mine[k] = (mine.get(k) or []) + new
                 added[k] = len(new)
-            for k in ("speciality", "city", "color"):
+            for k in ("speciality", "city", "color", "image"):
                 mine[k] = mine.get(k) or data.get(k)
             mine["languages"] = mine.get("languages") or data.get("languages") or []
             mine["uid"] = mine.get("uid") or uid
@@ -268,9 +271,15 @@ def import_clients(z, m: dict, uids: list[str] | None, mode: str, progress=None)
             if not n.startswith(pre) or n.endswith("/"):
                 continue
             rest = n[len(pre):].split("/")
-            if len(rest) != 2 or rest[0] not in ("files", "read") or not _NAME.match(rest[1]) or rest[1] in (".", ".."):
+            if len(rest) != 2 or rest[0] not in ("files", "read", "avatar") or not _NAME.match(rest[1]) or rest[1] in (".", ".."):
                 continue
-            target = f / rest[0] / rest[1]
+            if rest[0] == "avatar":
+                # the client's picture sits beside its folders; keep one that is already here
+                if not rest[1].startswith("avatar") or any(f.glob("avatar*")):
+                    continue
+                target = f / rest[1]
+            else:
+                target = f / rest[0] / rest[1]
             if target.exists():
                 continue
             with z.open(n) as src, open(target, "wb") as dst:

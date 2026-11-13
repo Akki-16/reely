@@ -150,6 +150,12 @@ def edit_clinic(handle: str, body: ClinicEdit):
     data = {k: v for k, v in body.model_dump().items() if v is not None}
     if "speciality" in data:
         data["speciality"] = " ".join(data["speciality"].split())[:60] or None
+    if "display_name" in data:
+        name = " ".join(data["display_name"].split())[:80]
+        data["display_name"] = name or handle          # cleared = back to the handle
+        m = importer.read_meta(DATA_ROOT / handle); m["name"] = name
+        if (DATA_ROOT / handle).is_dir():
+            (DATA_ROOT / handle / "clinic.json").write_text(json.dumps(m, ensure_ascii=False, indent=1))
     if data:
         sets = ", ".join(f"{k}=?" for k in data)
         with db.tx() as c:

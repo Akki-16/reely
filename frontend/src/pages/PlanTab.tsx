@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { HoldButton, Ui } from '../App'
+import { HoldButton, Ui, useName } from '../App'
 import { api, fmt, LANGS } from '../api'
 import type { ClientDoc, Pattern, Plan, PlanItem } from '../api'
 import { I } from '../icons'
@@ -167,6 +167,7 @@ function NewPlanForm({ c, hasPlans, onCancel, onMade }: { c: ClientDoc; hasPlans
 }
 
 function PatternsCard({ c, pats, open, setOpen, reload }: { c: ClientDoc; pats: Awaited<ReturnType<typeof api.patterns>> | null; open: boolean; setOpen: (v: boolean) => void; reload: () => void }) {
+  const nameOf = useName()
   const { toast } = useContext(Ui)
   const list: Pattern[] = pats?.patterns || []
   const mining = pats?.job?.status === 'running'
@@ -189,7 +190,7 @@ function PatternsCard({ c, pats, open, setOpen, reload }: { c: ClientDoc; pats: 
           <div className="caption" style={{ color: 'var(--c-sub)', lineHeight: 1.45 }}>{p.description}</div>
           <div className="caption" style={{ lineHeight: 1.45 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>Structure:</b> {p.structure}</div>
           {p.example_hooks?.[0] && <div className="caption" style={{ fontStyle: 'italic', lineHeight: 1.45 }}>“{p.example_hooks[0]}”</div>}
-          <div className="caption">{p.count} reels · {(p.accounts || []).map(a => '@' + a).join(', ')}{p.length_s ? ` · ~${p.length_s}s` : ''}</div>
+          <div className="caption">{p.count} reels · {(p.accounts || []).map(a => nameOf(a)).join(', ')}{p.length_s ? ` · ~${p.length_s}s` : ''}</div>
         </div>
       ))}</div>}
     </div>

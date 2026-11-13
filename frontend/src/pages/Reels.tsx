@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
-import { ClinicPicker, SpecialityPicker, Toolbar, Ui } from '../App'
+import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
 import type { Reel } from '../api'
 import { I } from '../icons'
@@ -40,6 +40,7 @@ const COLS: { key: keyof Reel | 'no'; label: string; wrap?: boolean; num?: boole
 const DEFAULT_COLS = ['like_rate', 'views', 'hook_en', 'hook_type', 'format', 'flag', 'language', 'duration', 'date']
 
 export default function Reels() {
+  const nameOf = useName()
   const { handle: hParam } = useParams()
   const { spec, clinics, toast, viewOnly, sideOpen } = useContext(Ui)
   // hook library: which reels are saved, and the ones ticked for a bulk send
@@ -110,7 +111,7 @@ export default function Reels() {
     setSel(s => s?.shortcode === code ? r : s)
   }
 
-  const scopeLabel = handle === ALL ? (spec ? `${spec} accounts` : 'All accounts') : handle
+  const scopeLabel = handle === ALL ? (spec ? `${spec} accounts` : 'All accounts') : nameOf(handle)
   // the running number is always the first column; it is not part of the user's column list
   const visibleCols = [COLS[0], ...cols.filter(k => k !== 'no').map(k => COLS.find(c => c.key === k)!).filter(Boolean).filter(c => (c.key !== 'clinic' && c.key !== 'speciality') || handle === ALL)]
   const exportParams: Record<string, string> = {}
@@ -186,7 +187,7 @@ export default function Reels() {
                     : <div className="lr" style={{ color: lrColor(r.like_rate) }}>{r.like_rate != null ? r.like_rate.toFixed(2) + '%' : '—'}</div>}
                   <div className="fill">
                     <div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_original || r.caption?.split('\n')[0] || r.shortcode}</div>
-                    <div className="s">{[handle === ALL ? r.clinic : null, r.format, langName(r.language), fmt.dur(r.duration), sort === 'views' ? null : fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}{sort === 'views' && r.like_rate != null && <> · <span style={{ color: lrColor(r.like_rate), fontWeight: 600 }}>{r.like_rate.toFixed(2)}% like-rate</span></>}</div>
+                    <div className="s">{[handle === ALL ? nameOf(r.clinic) : null, r.format, langName(r.language), fmt.dur(r.duration), sort === 'views' ? null : fmt.n(r.views) + ' views'].filter(Boolean).join(' · ')}{sort === 'views' && r.like_rate != null && <> · <span style={{ color: lrColor(r.like_rate), fontWeight: 600 }}>{r.like_rate.toFixed(2)}% like-rate</span></>}</div>
                   </div>
                   {lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 13, height: 13 })}</span>}
                   {I.fwd({ className: 'chev', style: { color: sel?.shortcode === r.shortcode ? 'var(--c-tint)' : undefined } })}
@@ -206,7 +207,7 @@ export default function Reels() {
                 {data?.reels.map((r, i) => (
                   <tr key={r.shortcode} className={sel?.shortcode === r.shortcode && card ? 'on' : ''} onClick={() => { setSel(r); setCard('open') }} onDoubleClick={e => { e.preventDefault(); window.getSelection()?.removeAllRanges(); sendToLibrary([r.shortcode]) }} title="Double-click to add to the hook library">
                     <td onClick={e => e.stopPropagation()} style={{ width: 28 }}><span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>{selecting && <input type="checkbox" className="rowcheck" aria-label="Select for the library" checked={picked.has(r.shortcode)} onChange={() => togglePick(r.shortcode)} />}{lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 12, height: 12 })}</span>}</span></td>
-                    {visibleCols.map(c => <td key={c.key} className={(c.wrap ? 'wrap ' : '') + (c.num ? 'num' : '')} title={!c.wrap && typeof r[c.key as keyof Reel] === 'string' ? String(r[c.key as keyof Reel]) : undefined}>{c.fmt ? c.fmt(r, i) : String(r[c.key as keyof Reel] ?? '')}</td>)}
+                    {visibleCols.map(c => <td key={c.key} className={(c.wrap ? 'wrap ' : '') + (c.num ? 'num' : '')} title={!c.wrap && typeof r[c.key as keyof Reel] === 'string' ? String(r[c.key as keyof Reel]) : undefined}>{c.key === 'clinic' ? nameOf(r.clinic) : c.fmt ? c.fmt(r, i) : String(r[c.key as keyof Reel] ?? '')}</td>)}
                   </tr>
                 ))}
               </tbody>

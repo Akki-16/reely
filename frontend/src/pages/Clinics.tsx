@@ -1,12 +1,13 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui } from '../App'
+import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt } from '../api'
 import type { Clinic } from '../api'
 import { I } from '../icons'
 import { ExportSheet, ImportSheet, Sheet } from './Transfer'
 
 export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
+  const nameOf = useName()
   const { viewOnly } = useContext(Ui)
   const { spec, specialities, refreshClinics } = useContext(Ui)
   const [data, setData] = useState<any>(null)
@@ -128,7 +129,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
               {(data?.recent_runs || []).length === 0 && <div className="grow"><div className="fill sub">No runs yet</div></div>}
               {(data?.recent_runs || []).map((r: any) => (
                 <Link key={r.id} to={`/run/${r.id}`} className="grow click" style={{ color: 'inherit', padding: '11px 16px' }}>
-                  <div className="fill" style={{ fontSize: 13 }}>{r.clinic} <span className="caption">· {r.status}{r.stage ? ` · ${r.stage}` : ''}</span></div>
+                  <div className="fill" style={{ fontSize: 13 }}>{nameOf(r.clinic)} <span className="caption">· {r.status}{r.stage ? ` · ${r.stage}` : ''}</span></div>
                   <div className="caption">{fmt.date(r.started)} {fmt.time(r.started)}</div>
                   {I.fwd({ className: 'chev', width: 12, height: 12 })}
                 </Link>
@@ -150,6 +151,7 @@ export default function Clinics({ onRun }: { onRun: (runId: number) => void }) {
 }
 
 function ClinicRow({ c, specialities, showSpec, onChange, onRun }: { c: Clinic; specialities: string[]; showSpec: boolean; onChange: () => void; onRun: (id: number) => void }) {
+  const nameOf = useName()
   const { viewOnly } = useContext(Ui)
   const [busy, setBusy] = useState(false)
   const [typing, setTyping] = useState(false)
@@ -163,15 +165,26 @@ function ClinicRow({ c, specialities, showSpec, onChange, onRun }: { c: Clinic; 
     : c.status === 'running' ? <span className="pill amber" title={c.waiting || ''}><span className="dot warn" />{c.waiting ? 'Waiting' : 'Running'}</span>
     : c.status === 'failed' ? <span className="pill red"><span className="dot bad" />Failed</span>
     : c.status === 'stopped' ? <span className="pill grey">Stopped</span> : <span className="pill grey">Not run</span>
+  const { ask, refreshClinics, toast } = useContext(Ui)
+  const rename = async () => {
+    const n = await ask({ title: 'Rename this account', label: `Name for @${c.handle}`, value: nameOf(c.handle) === c.handle ? '' : nameOf(c.handle), placeholder: c.handle, optional: true, ok: 'Save',
+      note: 'Shown everywhere in Reely in place of the Instagram handle. Leave it empty to go back to the handle. Files, exports and links keep using the handle.' })
+    if (n === null) return
+    try { await api.editClinic(c.handle, { display_name: n }); refreshClinics(); onChange() } catch (e: any) { toast(e.message) }
+  }
   const run = async () => {
     setBusy(true)
     try { const r = await api.startRun(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } finally { setBusy(false) }
   }
   return (
     <div className="grow">
-      <div className="ic solid" style={{ width: 40, height: 40, borderRadius: 11, fontSize: 15, fontWeight: 700, background: 'linear-gradient(180deg,#7C5CF0,#5B2BD9)' }}>{c.handle[0].toUpperCase()}</div>
+      <div className="ic solid" style={{ width: 40, height: 40, borderRadius: 11, fontSize: 15, fontWeight: 700, background: 'linear-gradient(180deg,#7C5CF0,#5B2BD9)' }}>{(nameOf(c.handle)[0] || '?').toUpperCase()}</div>
       <div className="fill">
-        <Link to={`/reels/${c.handle}`} className="t" style={{ color: 'inherit' }}>{c.handle}</Link>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <Link to={`/reels/${c.handle}`} className="t" style={{ color: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(c.handle)}</Link>
+          {nameOf(c.handle) !== c.handle && <span className="caption" style={{ whiteSpace: 'nowrap' }}>@{c.handle}</span>}
+          <button className="infobtn" title="Rename this account; the name is used everywhere in Reely" aria-label={`Rename ${c.handle}`} onClick={rename}>{I.pencil({ width: 11, height: 11 })}</button>
+        </span>
         <div className="s">{(c.reels_total || 0).toLocaleString()} reels · {c.downloaded ?? c.analysed} downloaded · {c.analysed} analysed{c.top_views ? ` · top reel ${fmt.n(c.top_views)}` : ''}{c.median_like_rate != null ? ` · median like-rate ${c.median_like_rate.toFixed(2)}%` : ''}</div>
         {(c.waiting || (c.failed || 0) > 0) && <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
           {c.waiting && <span className="caption" style={{ color: 'var(--c-amber)' }}>{c.waiting}</span>}
@@ -270,6 +283,7 @@ const LANE_LABEL: Record<string, string> = { instagram: 'Instagram', gpu: 'Speec
 
 /** Live view of the run queue: what each lane is doing and who is waiting, with reorder and stop. */
 function QueuePanel() {
+  const nameOf = useName()
   const [q, setQ] = useState<{ items: any[]; lanes: Record<string, { holder: string | null; waiting: number }> } | null>(null)
   const load = () => api.queue().then(setQ).catch(() => {})
   useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t) }, [])
@@ -286,7 +300,7 @@ function QueuePanel() {
           <div key={it.run_id} className="grow" style={{ padding: '10px 16px' }}>
             <div className="ic" style={{ width: 28, height: 28, flexBasis: 28 }}><span className="caption" style={{ fontWeight: 700, color: 'var(--c-ink)' }}>{i + 1}</span></div>
             <div className="fill">
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{it.clinic} <span className="caption" style={{ fontWeight: 500 }}>· {it.waiting ? 'waiting' : it.stage ? it.stage : it.status}{it.lane && !it.waiting ? ` on ${LANE_LABEL[it.lane]}` : ''}</span></div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{nameOf(it.clinic)} <span className="caption" style={{ fontWeight: 500 }}>· {it.waiting ? 'waiting' : it.stage ? it.stage : it.status}{it.lane && !it.waiting ? ` on ${LANE_LABEL[it.lane]}` : ''}</span></div>
               <div className="caption" style={it.waiting ? { color: 'var(--c-amber)' } : undefined}>{it.waiting || (it.total ? `${it.done ?? 0} of ${it.total} · ${it.note || ''}` : it.note || 'Starting…')}</div>
             </div>
             <button className="iconbtn" aria-label="Move up" disabled={i === 0} onClick={() => api.moveRun(it.run_id, -1).then(load)}>{I.up()}</button>
@@ -303,6 +317,7 @@ function QueuePanel() {
 
 /** Disk use per clinic with clean-up actions; nothing is removed without a hold. */
 function StoragePanel({ clinics, onChange }: { clinics: string[]; onChange: () => void }) {
+  const nameOf = useName()
   const [d, setD] = useState<{ clinics: any[]; auto_clear_videos: boolean } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const load = () => api.storage().then(setD).catch(() => {})
@@ -328,7 +343,7 @@ function StoragePanel({ clinics, onChange }: { clinics: string[]; onChange: () =
         {rows.map(c => (
           <div key={c.handle} className="grow" style={{ padding: '10px 16px' }}>
             <div className="fill">
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{c.handle}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{nameOf(c.handle)}</div>
               <div className="caption">{c.videos_n} videos · {fmt.bytes(c.videos_bytes)} · {c.processed_n} already transcribed and annotated ({fmt.bytes(c.processed_bytes)}) · transcripts {fmt.bytes(c.transcripts_bytes)}{c.temp_n ? ` · ${c.temp_n} leftover partial files` : ''}</div>
             </div>
             {c.temp_n > 0 && <button className="btn plain sm" onClick={() => act(c.handle, 'temp')}>Clear partial files</button>}

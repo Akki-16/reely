@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Ui } from '../App'
-import { api } from '../api'
+import { api, clientImage } from '../api'
 import type { ClientSummary } from '../api'
 import { I } from '../icons'
 
@@ -93,7 +93,7 @@ export default function SendTo({ codes: given, load, inLib, onLibrary, onDone, a
               const n = has[String(c.id)] || 0
               return (
                 <button key={c.id} className="row" role="menuitem" disabled={!codes.length} onClick={() => sendTo(c)}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}><span className="sendic" style={{ background: c.color || 'var(--c-tint)', color: '#fff', fontWeight: 700, fontSize: 11 }}>{c.name.slice(0, 1).toUpperCase()}</span><span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span></span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>{clientImage(c) ? <img className="sendic" src={clientImage(c)!} alt="" style={{ objectFit: 'cover' }} /> : <span className="sendic" style={{ background: c.color || 'var(--c-tint)', color: '#fff', fontWeight: 700, fontSize: 11 }}>{c.name.slice(0, 1).toUpperCase()}</span>}<span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span></span>
                   <span className="caption" style={n ? { color: 'var(--c-green)', fontWeight: 600 } : undefined}>{codes.length > 1 ? (n ? `${codes.length - n} new · ${n} there` : `${codes.length} new`) : n ? 'already there' : (c.speciality || '')}</span>
                 </button>
               )

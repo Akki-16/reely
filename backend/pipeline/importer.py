@@ -59,7 +59,8 @@ def import_clinic(clinic_dir: Path, top_n: int | None = None, status: str = "don
     meta = read_meta(clinic_dir)
     prev = db.one("SELECT speciality FROM clinics WHERE handle=?", (handle,)) or {}
     db.upsert("clinics", {
-        "handle": handle, "display_name": info.get("uploader") or handle, "followers": None,
+        # a name the user gave the account (clinic.json "name") wins over Instagram's own
+        "handle": handle, "display_name": meta.get("name") or info.get("uploader") or handle, "followers": None,
         "speciality": meta.get("speciality") or prev.get("speciality") or KNOWN_SPECIALITIES.get(handle),
         "reels_total": len(idx), "analysed": analysed,
         "median_views": statistics.median(vals) if vals else None, "top_views": max(vals) if vals else None,

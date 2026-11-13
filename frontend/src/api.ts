@@ -33,10 +33,10 @@ export type Brief = Record<string, any>
 export type BriefMeta = { drafted_at?: string; sources?: number; edited?: string[]; version?: number; locked?: boolean; history?: { at: string; what: string }[] }
 export type ClientJob = { kind?: string; section?: string; status: string; note?: string; error?: string | null } | null
 export type ClientDoc = {
-  id: number; name: string; speciality: string | null; city: string | null; languages: string[]; color: string | null
+  id: number; name: string; speciality: string | null; city: string | null; languages: string[]; color: string | null; image?: string | null
   people: Person[]; branches: Branch[]; sources: Source[]; brief: Brief | null; brief_meta: BriefMeta; job?: ClientJob; created_at: string; updated_at: string
 }
-export type ClientSummary = { id: number; name: string; speciality: string | null; city: string | null; languages: string[]; color: string | null; lead: string | null; people: number; branches: number; has_brief: boolean; brief_locked: boolean; refs: number; scripts: number; writing: number; review: number; updated_at: string }
+export type ClientSummary = { id: number; name: string; speciality: string | null; city: string | null; languages: string[]; color: string | null; image?: string | null; lead: string | null; people: number; branches: number; has_brief: boolean; brief_locked: boolean; refs: number; scripts: number; writing: number; review: number; updated_at: string }
 export type ScriptLine = { t?: string; who?: string; line?: string; romanised?: string; english?: string; visual?: string }
 export type ScriptData = {
   title?: string; topic?: string; borrowed?: string; duration_s?: number; on_camera?: string[]
@@ -144,6 +144,8 @@ export const api = {
   clientEdit: (id: number, data: Partial<ClientDoc>) => j<ClientDoc>(`/api/clients/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   clientDelete: (id: number) => j(`/api/clients/${id}`, { method: 'DELETE' }),
   clientFiles: (id: number, paths: string[], person_id?: string | null) => j<ClientDoc>(`/api/clients/${id}/files`, { method: 'POST', body: JSON.stringify({ paths, person_id }) }),
+  clientImage: (id: number, path: string) => j<ClientDoc>(`/api/clients/${id}/image`, { method: 'POST', body: JSON.stringify({ path }) }),
+  clientImageRemove: (id: number) => j<ClientDoc>(`/api/clients/${id}/image`, { method: 'DELETE' }),
   clientRead: (id: number, source_id?: string) => j(`/api/clients/${id}/read`, { method: 'POST', body: JSON.stringify({ source_id }) }),
   briefDraft: (id: number) => j(`/api/clients/${id}/brief/draft`, { method: 'POST' }),
   briefRedraft: (id: number, section: string, ask = '') => j(`/api/clients/${id}/brief/redraft`, { method: 'POST', body: JSON.stringify({ section, ask }) }),
@@ -173,6 +175,9 @@ export const api = {
   scriptPdf: (sid: number, ref = false) => j<{ path: string; pdf: boolean; note?: string }>(`/api/scripts/${sid}/pdf?ref=${ref}`, { method: 'POST' }),
   reveal: (path = '') => j('/api/reveal?path=' + encodeURIComponent(path), { method: 'POST' }),
 }
+
+/** URL of a client's picture, or null when it has none. */
+export const clientImage = (c: { id: number; image?: string | null }) => c.image ? url(`/api/clients/${c.id}/image/${encodeURIComponent(c.image)}`) : null
 
 export const fmt = {
   /** Short counts for views and likes: 28m, 6.8m, 355k, 23.9k, 157. */

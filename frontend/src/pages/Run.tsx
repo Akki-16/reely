@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui } from '../App'
+import { ClinicPicker, HoldButton, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, langName } from '../api'
 import type { Run as RunT, Stage } from '../api'
 import { I } from '../icons'
@@ -112,6 +112,7 @@ export default function Run() {
 }
 
 function Tabs({ items, tab, onPick, historyCount }: { items: any[]; tab: number | 'history' | null; onPick: (t: number | 'history') => void; historyCount: number }) {
+  const nameOf = useName()
   return (
     <div className="runtabs" role="tablist" aria-label="Runs">
       {items.map((q, i) => {
@@ -121,7 +122,7 @@ function Tabs({ items, tab, onPick, historyCount }: { items: any[]; tab: number 
         const on = tab === q.run_id
         return (
           <button key={q.run_id} role="tab" aria-selected={on} className={'runtab' + (on ? ' on' : '')} onClick={() => onPick(q.run_id)} title={q.waiting || q.note || ''}>
-            <span className="rt-name"><span className="rt-no">{i + 1}</span>{q.clinic}</span>
+            <span className="rt-name"><span className="rt-no">{i + 1}</span>{nameOf(q.clinic)}</span>
             <span className={'rt-sub' + (q.waiting || q.status === 'queued' ? ' muted' : '')}>{label}</span>
             <span className="rt-bar">{pct != null && <span style={{ width: pct + '%' }} />}</span>
           </button>
@@ -137,6 +138,7 @@ function Tabs({ items, tab, onPick, historyCount }: { items: any[]; tab: number 
 }
 
 function LiveRun({ runId, pickers, tabs }: { runId: number; pickers: React.ReactNode; tabs: React.ReactNode }) {
+  const nameOf = useName()
   const [run, setRun] = useState<RunT | null>(null)
   const [skipping, setSkipping] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -164,7 +166,7 @@ function LiveRun({ runId, pickers, tabs }: { runId: number; pickers: React.React
 
   return (
     <>
-      <Toolbar title={`Run · ${run.clinic}`}>
+      <Toolbar title={`Run · ${nameOf(run.clinic)}`}>
         {pickers}
         {active && (run.status === 'paused'
           ? <button className="btn plain" onClick={() => api.runAction(run.id, 'resume')}>Resume</button>
@@ -180,7 +182,7 @@ function LiveRun({ runId, pickers, tabs }: { runId: number; pickers: React.React
         {tabs}
         <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-            <b style={{ fontSize: 15 }}>@{run.clinic}</b>
+            <b style={{ fontSize: 15 }}>{nameOf(run.clinic)}</b>{nameOf(run.clinic) !== run.clinic && <span className="caption">@{run.clinic}</span>}
             <span className="caption">Stage {Math.min(doneN + 1, 6)} of 6 · started {fmt.date(run.started)} {fmt.time(run.started)}{sofar != null ? ` · ${dur(sofar)} so far` : ''}</span>
           </div>
           <div style={{ height: 8, borderRadius: 4, background: 'var(--c-fill)', overflow: 'hidden', display: 'flex' }}>
@@ -248,6 +250,7 @@ function History({ runs, openId, setOpenId, loading }: { runs: RunT[]; openId: n
 }
 
 function HistoryRun({ r, open, onToggle }: { r: RunT; open: boolean; onToggle: () => void }) {
+  const nameOf = useName()
   const [full, setFull] = useState<RunT | null>(null)
   const [errorsOnly, setErrorsOnly] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -272,7 +275,7 @@ function HistoryRun({ r, open, onToggle }: { r: RunT; open: boolean; onToggle: (
       <button className="hrun-h" onClick={onToggle} aria-expanded={open}>
         {open ? I.down() : I.fwd({ width: 12, height: 12 })}
         <span className="fill" style={{ minWidth: 0 }}>
-          <b>{r.clinic}</b> <span className="caption">· run {r.id} · {fmt.date(r.started)} {fmt.time(r.started)}{b ? ` → ${fmt.time(r.finished)}` : ''}</span>
+          <b>{nameOf(r.clinic)}</b> <span className="caption">· run {r.id} · {fmt.date(r.started)} {fmt.time(r.started)}{b ? ` → ${fmt.time(r.finished)}` : ''}</span>
           {!open && brief && <span className="caption" style={{ display: 'block', marginTop: 2 }}>{brief}</span>}
         </span>
         <span className="caption">{dur(total)}</span>

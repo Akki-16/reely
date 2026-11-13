@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api, isTauri, openExternal } from './api'
 import type { Clinic } from './api'
@@ -19,6 +19,7 @@ export type Health = { claude: any; browser: { logged_in?: boolean; installed?: 
 export type Theme = 'system' | 'light' | 'dark'
 /** What the people Acro makes scripts for are called (Settings › Names). */
 export type Words = { one: string; many: string }
+export type AskOptions = { title: string; label?: string; value?: string; placeholder?: string; note?: string; ok?: string; multiline?: boolean; optional?: boolean }
 
 /** App-wide UI state: sidebar, and the speciality filter shared by every page. */
 export const Ui = createContext<{
@@ -29,7 +30,11 @@ export const Ui = createContext<{
   viewOnly: boolean
   theme: Theme; setTheme: (t: Theme) => void
   words: Words; setWords: (w: Words) => void
-}>({ words: { one: 'Client', many: 'Clients' }, setWords: () => {},  sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false, theme: 'system', setTheme: () => {} })
+  /** The name to show for a reference account: the one you gave it, else its Instagram handle. */
+  nameOf: (handle: string | null | undefined) => string
+  /** An in-app text prompt. The desktop window has no window.prompt, so every rename goes through this. Resolves null on Cancel. */
+  ask: (o: AskOptions) => Promise<string | null>
+}>({ words: { one: 'Client', many: 'Clients' }, setWords: () => {}, nameOf: h => h || '', ask: async () => null,  sideOpen: true, setSideOpen: () => {}, spec: '', setSpec: () => {}, specialities: [], clinics: [], refreshClinics: () => {}, toast: () => {}, viewOnly: false, theme: 'system', setTheme: () => {} })
 
 type ToastT = { id: number; msg: string; undo?: () => void }
 
@@ -53,6 +58,10 @@ export default function App() {
   const setSpec = (v: string) => { setSpecState(v); localStorage.setItem('reely.spec', v) }
   useEffect(() => { applyTheme(theme) }, [])
 
+  const names = useMemo(() => Object.fromEntries(clinics.map(c => [c.handle, c.display_name || c.handle])), [clinics])
+  const nameOf = (h: string | null | undefined) => (h && names[h]) || h || ''
+  const [asking, setAsking] = useState<(AskOptions & { resolve: (v: string | null) => void }) | null>(null)
+  const ask = (o: AskOptions) => new Promise<string | null>(resolve => setAsking({ ...o, resolve }))
   const [toasts, setToasts] = useState<ToastT[]>([])
   const toast = (msg: string, undo?: () => void) => {
     const id = Date.now() + Math.random()
@@ -91,7 +100,7 @@ export default function App() {
   const toggle = <button className="iconbtn" aria-label={sideOpen ? 'Hide sidebar' : 'Show sidebar'} title={sideOpen ? 'Hide sidebar' : 'Show sidebar'} onClick={() => setSideOpen(!sideOpen)}>{I.sidebar()}</button>
 
   return (
-    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly, theme, setTheme, words, setWords }}>
+    <Ui.Provider value={{ sideOpen, setSideOpen, spec, setSpec, specialities, clinics, refreshClinics, toast, viewOnly: !!health.viewOnly, theme, setTheme, words, setWords, nameOf, ask }}>
     <UpdaterProvider>
       <div className={'shell' + (sideOpen ? '' : ' noside')}>
         <aside className="side" aria-hidden={!sideOpen}>
@@ -146,6 +155,7 @@ export default function App() {
           </Routes>
         </div>
       </div>
+      {asking && <AskSheet o={asking} onDone={v => { asking.resolve(v); setAsking(null) }} />}
       <div className="toasts" aria-live="polite">
         {toasts.map(t => (
           <div key={t.id} className="toast">
@@ -158,6 +168,32 @@ export default function App() {
     </Ui.Provider>
   )
 }
+
+function AskSheet({ o, onDone }: { o: AskOptions; onDone: (v: string | null) => void }) {
+  const [v, setV] = useState(o.value || '')
+  const ok = o.optional || v.trim().length > 0
+  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onDone(null) }; document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k) }, [])
+  return (
+    <div className="sheet-back" style={{ zIndex: 400 }} onMouseDown={e => { if (e.target === e.currentTarget) onDone(null) }}>
+      <form className="card sheet" style={{ width: 440 }} onSubmit={e => { e.preventDefault(); if (ok) onDone(v.trim()) }}>
+        <b style={{ fontSize: 17, letterSpacing: '-.015em' }}>{o.title}</b>
+        <label className="formrow">{o.label && <span>{o.label}</span>}
+          {o.multiline
+            ? <textarea className="inline" autoFocus rows={3} value={v} placeholder={o.placeholder} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ok) onDone(v.trim()) }} />
+            : <div className="field"><input autoFocus value={v} placeholder={o.placeholder} onChange={e => setV(e.target.value)} onFocus={e => e.target.select()} /></div>}
+        </label>
+        {o.note && <div className="caption" style={{ lineHeight: 1.5 }}>{o.note}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" className="btn plain" onClick={() => onDone(null)}>Cancel</button>
+          <button className="btn" type="submit" disabled={!ok}>{o.ok || 'Save'}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/** The display name of a reference account, for components that only need that. */
+export const useName = () => useContext(Ui).nameOf
 
 export function Toolbar({ title, children }: { title: string; children?: React.ReactNode }) {
   const { sideOpen, setSideOpen } = useContext(Ui)
@@ -192,7 +228,7 @@ export function ClinicPicker({ value, onChange, allValue = '_all', allLabel = 'A
     <div className="field">
       <select value={value} onChange={e => onChange(e.target.value)} aria-label="Reference account" style={bold ? { fontWeight: 600 } : undefined}>
         {allValue != null && <option value={allValue}>{allLabel}</option>}
-        {list.map(c => <option key={c.handle} value={c.handle}>{c.handle}</option>)}
+        {list.map(c => <option key={c.handle} value={c.handle}>{c.display_name || c.handle}</option>)}
         {value && value !== allValue && !list.some(c => c.handle === value) && <option value={value}>{value}</option>}
       </select>
     </div>

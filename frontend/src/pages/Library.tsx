@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ClinicPicker, SpecialityPicker, Toolbar, Ui } from '../App'
+import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, isTauri, lrColor, url } from '../api'
 import { I } from '../icons'
 
@@ -83,12 +83,13 @@ export default function Library() {
 }
 
 function HookRow({ r, saved, onToggle, showNote, onNote }: { r: any; saved: boolean; onToggle: () => void; showNote: boolean; onNote: (n: string) => void }) {
+  const nameOf = useName()
   const { toast } = useContext(Ui)
   const [note, setNote] = useState(r.lib_note || '')
   const [editing, setEditing] = useState(false)
   useEffect(() => setNote(r.lib_note || ''), [r.lib_note])
   if (r.missing) return (
-    <div className="hookrow"><div /><div className="fill"><div className="caption">{r.shortcode} from @{r.clinic} is no longer in the index on this Mac.</div></div>
+    <div className="hookrow"><div /><div className="fill"><div className="caption">{r.shortcode} from {nameOf(r.clinic)} is no longer in the index on this Mac.</div></div>
       <button className="btn plain sm" onClick={onToggle}>Remove</button></div>
   )
   return (
@@ -103,7 +104,7 @@ function HookRow({ r, saved, onToggle, showNote, onNote }: { r: any; saved: bool
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           {r.hook_type && <span className="chip">{r.hook_type}</span>}
           {r.format && <span className="chip">{r.format}</span>}
-          <span className="caption">@{r.clinic}{r.speciality ? ` · ${r.speciality}` : ''} · {fmt.n(r.views)} views{r.outlier ? ` · ${Math.round(r.outlier)}× median` : ''}</span>
+          <span className="caption">{nameOf(r.clinic)}{r.speciality ? ` · ${r.speciality}` : ''} · {fmt.n(r.views)} views{r.outlier ? ` · ${Math.round(r.outlier)}× median` : ''}</span>
         </div>
         {r.summary && <div className="caption" style={{ lineHeight: 1.5, color: 'var(--c-sub)' }}>{r.summary}</div>}
         {showNote && (editing

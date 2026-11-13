@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
-import { ClinicPicker, SpecialityPicker, Toolbar, Ui } from '../App'
+import { ClinicPicker, SpecialityPicker, Toolbar, Ui, useName } from '../App'
 import { api, fmt, langName, lrColor } from '../api'
 import type { CatCell, CatField, CatGroup, Categories as Cats, Reel } from '../api'
 import { I } from '../icons'
@@ -22,6 +22,7 @@ const show = (f: CatField, v: string) => f === 'language' ? (langName(v) || v) :
 const pct = (v: number | null | undefined) => v == null ? '—' : v.toFixed(2) + '%'
 
 export default function Categories() {
+  const nameOf = useName()
   const { spec, toast, sideOpen } = useContext(Ui)
   const [clinic, setClinic] = useState('')
   const [view, setView] = useLocal<View>('reely.cat.view', 'grid')
@@ -99,7 +100,7 @@ export default function Categories() {
 
   const selName = sel ? [show(a, sel.av), sel.bv != null ? show(b, sel.bv) : null].filter(Boolean).join(' × ') : ''
   const selGroup: CatGroup | CatCell | undefined = !sel ? undefined : sel.bv != null ? data?.cells.find(c => c.a === sel.av && c.b === sel.bv) : data?.a.find(g => g.value === sel.av)
-  const scopeLabel = clinic || spec || 'all specialities'
+  const scopeLabel = (clinic && nameOf(clinic)) || spec || 'all specialities'
 
   const reelList = (pad = '9px 18px') => (
     <>
@@ -111,7 +112,7 @@ export default function Categories() {
           <b style={{ width: 52, color: lrColor(r.like_rate) }}>{pct(r.like_rate)}</b>
           <div className="fill" style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_original || r.shortcode}</div>
-            <div className="caption" style={{ color: 'var(--c-sub)' }}>{[r.clinic, sel?.bv == null ? r.hook_type : null, a !== 'format' && b !== 'format' ? r.format : null, fmt.dur(r.duration), fmt.n(r.views) + ' views', fmt.date(r.date)].filter(Boolean).join(' · ')}</div>
+            <div className="caption" style={{ color: 'var(--c-sub)' }}>{[nameOf(r.clinic), sel?.bv == null ? r.hook_type : null, a !== 'format' && b !== 'format' ? r.format : null, fmt.dur(r.duration), fmt.n(r.views) + ' views', fmt.date(r.date)].filter(Boolean).join(' · ')}</div>
           </div>
           {lib.has(r.shortcode) && <span style={{ color: '#F5A623', display: 'flex' }} title="In the hook library">{I.starFill({ width: 13, height: 13 })}</span>}
           <SendTo codes={[r.shortcode]} inLib={lib.has(r.shortcode)} onLibrary={() => toggleLib(r.shortcode)} />
@@ -295,7 +296,7 @@ function Grid({ data, a, b, min, sel, setSel }: { data: Cats; a: CatField; b: Ca
 
 /** Rename a label or merge it into another, across the speciality. Fixes labels Claude invented one reel at a time. */
 function TidySheet({ field, groups, speciality, onClose, onChanged }: { field: CatField; groups: CatGroup[]; speciality: string | null; onClose: () => void; onChanged: () => void }) {
-  const { toast } = useContext(Ui)
+  const { toast, ask } = useContext(Ui)
   const [busy, setBusy] = useState('')
   const small = [...groups].sort((x, y) => x.n - y.n)
   const big = [...groups].sort((x, y) => y.n - x.n)
@@ -315,7 +316,7 @@ function TidySheet({ field, groups, speciality, onClose, onChanged }: { field: C
               <option value="">{busy === g.value ? 'Working…' : 'Merge into…'}</option>
               {big.filter(x => x.value !== g.value).map(x => <option key={x.value} value={x.value}>{x.value} · {x.n}</option>)}
             </select></div>
-            <button className="btn plain sm" disabled={!!busy} onClick={() => { const n = window.prompt(`Rename "${g.value}" to`, g.value); if (n && n.trim() && n.trim() !== g.value) apply(g.value, n.trim()) }}>Rename</button>
+            <button className="btn plain sm" disabled={!!busy} onClick={async () => { const n = await ask({ title: `Rename "${g.value}"`, label: 'New label', value: g.value, ok: 'Rename', note: 'Typing the name of another label merges this one into it.' }); if (n && n !== g.value) apply(g.value, n) }}>Rename</button>
           </div>
         ))}
       </div>

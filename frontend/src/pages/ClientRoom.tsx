@@ -1,8 +1,8 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { HoldButton, Toolbar, Ui } from '../App'
-import { api, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
+import { HoldButton, Toolbar, Ui, useName } from '../App'
+import { api, clientImage, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
 import type { Branch, Brief, ClientDoc, Person, Plan, Reel, Script, ScriptData, Source } from '../api'
 import { I } from '../icons'
 import { Avatar, SCRIPT_LANGS } from './Clients'
@@ -46,6 +46,16 @@ export default function ClientRoom() {
 
   const save = async (patch: Partial<ClientDoc>) => { try { setC(await api.clientEdit(id, patch)) } catch (e: any) { toast(e.message) } }
   const go = (t: string) => nav(`/clients/${id}/${t}`)
+  const pickImage = async () => {
+    let path: string | null = null
+    if (isTauri) {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const r = await open({ multiple: false, directory: false, title: 'Choose an image: a logo or a photo', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'heic'] }] })
+      path = typeof r === 'string' ? r : null
+    } else path = window.prompt('Path to the image')
+    if (!path) return
+    try { setC(await api.clientImage(id, path)) } catch (e: any) { toast(e.message) }
+  }
 
   if (err) return <><Toolbar title={words.one} /><div className="main"><div className="main-inner"><div className="err">{err}</div><Link to="/clients">‹ {words.many}</Link></div></div></>
   if (!c) return <><Toolbar title={words.one} /><div className="main"><div className="empty">Loading…</div></div></>
@@ -60,13 +70,13 @@ export default function ClientRoom() {
       </Toolbar>
       <div className="main"><div className="main-inner wide" style={{ maxWidth: 1240, gap: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <Avatar name={c.name} color={c.color} size={48} />
+          <button className="avatarbtn" onClick={pickImage} title={c.image ? 'Change the image' : 'Add an image'} aria-label="Change the client image"><Avatar name={c.name} color={c.color} size={48} src={clientImage(c)} /></button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-.025em' }}>{c.name}</div>
             <div className="sub">{meta || 'Add the speciality, people and branches below'}</div>
           </div>
           {c.brief && <button className="btn plain sm" onClick={async () => { try { const r = await api.briefPdf(id); toast(r.pdf ? `Saved ${r.path.split('/').pop()} to Downloads` : r.note || 'Saved') } catch (e: any) { toast(e.message) } }}>{I.pdf()} Share brief</button>}
-          <ClientMenu c={c} onRename={name => save({ name })} onExport={() => setExporting(true)} onDelete={async () => { await api.clientDelete(id); nav('/clients') }} />
+          <ClientMenu c={c} onRename={name => save({ name })} onImage={pickImage} onNoImage={async () => { try { setC(await api.clientImageRemove(id)) } catch (e: any) { toast(e.message) } }} onExport={() => setExporting(true)} onDelete={async () => { await api.clientDelete(id); nav('/clients') }} />
         </div>
         <div className="roomtabs" role="tablist">
           <button role="tab" className={tab === 'context' || tab === 'brief' ? 'on' : ''} onClick={() => go(ctxTab)}>Context</button>
@@ -106,15 +116,17 @@ function JobLine({ c }: { c: ClientDoc }) {
   return null
 }
 
-function ClientMenu({ c, onRename, onExport, onDelete }: { c: ClientDoc; onRename: (n: string) => void; onExport: () => void; onDelete: () => void }) {
-  const { words } = useContext(Ui)
+function ClientMenu({ c, onRename, onExport, onDelete, onImage, onNoImage }: { c: ClientDoc; onRename: (n: string) => void; onExport: () => void; onDelete: () => void; onImage: () => void; onNoImage: () => void }) {
+  const { words, ask } = useContext(Ui)
   const [open, setOpen] = useState(false)
   const ref = useOutside(open, () => setOpen(false))
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button className={'btn plain sm' + (open ? ' on' : '')} onClick={() => setOpen(v => !v)} aria-label="More">•••</button>
       {open && <div className="card menu" style={{ width: 240 }}>
-        <button className="row" onClick={() => { setOpen(false); const n = window.prompt(`Rename ${words.one.toLowerCase()}`, c.name); if (n && n.trim()) onRename(n.trim()) }}>Rename…</button>
+        <button className="row" onClick={async () => { setOpen(false); const n = await ask({ title: `Rename ${words.one.toLowerCase()}`, label: 'Name', value: c.name, ok: 'Rename' }); if (n && n !== c.name) onRename(n) }}>Rename…</button>
+        <button className="row" onClick={() => { setOpen(false); onImage() }}>{c.image ? 'Change image…' : 'Add an image…'}</button>
+        {c.image && <button className="row" onClick={() => { setOpen(false); onNoImage() }}>Remove image</button>}
         <button className="row" onClick={() => { setOpen(false); onExport() }}>Export this {words.one.toLowerCase()}…</button>
         <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0' }} />
         <HoldButton label={`Delete ${words.one.toLowerCase()}`} ms={2500} onHold={onDelete} className="row" style={{ width: '100%', justifyContent: 'flex-start' }} />
@@ -334,13 +346,17 @@ const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean)
 const keepSrc = (old: any[] = [], next: string[], key: 'text' | 'q') => next.map(t => { const o = old.find(x => asText(x) === t); return o && typeof o === 'object' ? o : { [key]: t } })
 
 function BriefView({ c, setC, reload }: { c: ClientDoc; setC: (c: ClientDoc) => void; reload: () => void }) {
-  const { toast } = useContext(Ui)
+  const { toast, ask } = useContext(Ui)
   const b = c.brief
   const m = c.brief_meta || {}
   const busy = c.job?.status === 'running'
   const [editing, setEditing] = useState<string | null>(null)
   const saveBrief = async (patch: Brief, section: string) => { try { setC(await api.briefSave(c.id, { brief: { ...b, ...patch }, section })); setEditing(null) } catch (e: any) { toast(e.message) } }
-  const redraft = async (section: string) => { const ask = window.prompt('Anything Claude should change? (optional)', '') ; if (ask === null) return; try { await api.briefRedraft(c.id, section, ask); setEditing(null); reload() } catch (e: any) { toast(e.message) } }
+  const redraft = async (section: string) => {
+    const note = await ask({ title: 'Redraft with Claude', label: 'Anything Claude should change?', placeholder: 'Optional, e.g. shorter, or mention the Kondapur branch', multiline: true, optional: true, ok: 'Redraft', note: 'Claude rewrites only this section from the sources.' })
+    if (note === null) return
+    try { await api.briefRedraft(c.id, section, note); setEditing(null); reload() } catch (e: any) { toast(e.message) }
+  }
   const lock = async (locked: boolean) => { try { setC(await api.briefSave(c.id, { locked })) } catch (e: any) { toast(e.message) } }
 
   if (!b) return (
@@ -377,7 +393,7 @@ function BriefView({ c, setC, reload }: { c: ClientDoc; setC: (c: ClientDoc) => 
       <article className="briefdoc">
         <header style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="beyebrow" style={{ display: 'flex' }}>Client brief<span style={{ color: 'var(--c-muted)', margin: '0 8px' }}>·</span><span style={{ color: 'var(--c-muted)' }}>{c.speciality}</span><span className="spacer" /><span style={{ color: 'var(--c-muted)', letterSpacing: 0, textTransform: 'none', fontWeight: 600 }}>Version {m.version || 1}{m.drafted_at ? ' · ' + fmt.date(m.drafted_at) : ''}</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><Avatar name={c.name} color={c.color} size={52} /><h1 style={{ margin: 0, fontSize: 34, fontWeight: 800, letterSpacing: '-.03em' }}>{c.name}</h1></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><Avatar name={c.name} color={c.color} size={52} src={clientImage(c)} /><h1 style={{ margin: 0, fontSize: 34, fontWeight: 800, letterSpacing: '-.03em' }}>{c.name}</h1></div>
           {sec('positioning', '', <p className="lede">{b.positioning || <span className="caption">Add a one-line positioning</span>}</p>,
             done => <TextEdit value={b.positioning || ''} rows={2} onSave={t => done({ positioning: t })} onCancel={() => setEditing(null)} />)}
         </header>
@@ -418,7 +434,7 @@ function BriefView({ c, setC, reload }: { c: ClientDoc; setC: (c: ClientDoc) => 
           done => <ExtraEdit title={x.title} body={x.body} onSave={(title, body) => done({ extra: (b.extra || []).map((y: any, j: number) => j === i ? { title, body } : y).filter((y: any) => y.title || y.body) })} onCancel={() => setEditing(null)} />))}
         {sec('cta', '', <div className="bcta"><div className="beyebrow" style={{ color: '#C4B5FD', width: 96 }}>Every reel ends with</div><div style={{ flex: 1 }}><div style={{ fontSize: 15, fontWeight: 600 }}>{cta.text}</div>{cta.note && <div style={{ fontSize: 12.5, opacity: .65 }}>{cta.note}</div>}</div></div>,
           done => <MultiEdit items={[{ label: 'Every reel ends with', value: cta.text || '' }, { label: 'Branch or person variations', value: cta.note || '' }]} onSave={([text, note]) => done({ cta: { text, note } })} onCancel={() => setEditing(null)} />)}
-        {!locked && <button className="baddsec" onClick={async () => { const t = window.prompt('Section title'); if (t && t.trim()) { await saveBrief({ extra: [...(b.extra || []), { title: t.trim(), body: '' }] }, 'extra'); setEditing('extra-' + (b.extra || []).length) } }}>{I.plus()} Add a section</button>}
+        {!locked && <button className="baddsec" onClick={async () => { const t = await ask({ title: 'Add a section', label: 'Section title', placeholder: 'e.g. Competitors, Festivals, Doctor availability', ok: 'Add' }); if (t) { await saveBrief({ extra: [...(b.extra || []), { title: t, body: '' }] }, 'extra'); setEditing('extra-' + (b.extra || []).length) } }}>{I.plus()} Add a section</button>}
       </article>
       <aside className="briefrail">
         <div className="card railcard">
@@ -505,6 +521,7 @@ function VoiceEdit({ voice, onSave, onCancel }: { voice: any; onSave: (v: any) =
 
 /* ---------------- References ---------------- */
 function RefsView({ c, refs, reload, onGenerate }: { c: ClientDoc; refs: Ref[]; reload: () => void; onGenerate: (r: Ref) => void }) {
+  const nameOf = useName()
   const { toast, words } = useContext(Ui)
   if (!refs.length) return (
     <div className="card pad" style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -518,7 +535,7 @@ function RefsView({ c, refs, reload, onGenerate }: { c: ClientDoc; refs: Ref[]; 
       {refs.map(r => (
         <div key={r.shortcode} className="card refcard">
           <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--c-tint)', lineHeight: 1.35, letterSpacing: '-.01em' }}>{r.hook_en || r.hook_original || r.caption?.split('\n')[0] || r.shortcode}</div>
-          <div className="caption" style={{ color: 'var(--c-sub)' }}>@{r.clinic}{r.format ? ' · ' + r.format : ''}{r.language ? ' · ' + langName(r.language) : ''}{r.duration ? ' · ' + fmt.dur(r.duration) : ''}</div>
+          <div className="caption" style={{ color: 'var(--c-sub)' }}>{nameOf(r.clinic)}{r.format ? ' · ' + r.format : ''}{r.language ? ' · ' + langName(r.language) : ''}{r.duration ? ' · ' + fmt.dur(r.duration) : ''}</div>
           <div style={{ display: 'flex', gap: 12, fontSize: 12.5 }}><b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)}</b><span className="sub">{fmt.n(r.views)} views</span>{r.scripts > 0 && <span className="pill tint" style={{ padding: '1px 8px' }}>{r.scripts} script{r.scripts === 1 ? '' : 's'}</span>}</div>
           {r.summary && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.summary}</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 'auto', paddingTop: 4 }}>
@@ -534,6 +551,7 @@ function RefsView({ c, refs, reload, onGenerate }: { c: ClientDoc; refs: Ref[]; 
 }
 
 function GenerateSheet({ c, refReel, onClose, onMade }: { c: ClientDoc; refReel: Ref | null; onClose: () => void; onMade: (sid: number) => void }) {
+  const nameOf = useName()
   const lead = c.people.find(p => p.lead) || c.people[0]
   const langs = [...new Set([...(c.languages || []), ...SCRIPT_LANGS.slice(0, 3)])]
   const [person, setPerson] = useState(lead?.id || '')
@@ -552,7 +570,7 @@ function GenerateSheet({ c, refReel, onClose, onMade }: { c: ClientDoc; refReel:
     <div className="sheet-back" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <form className="card sheet" style={{ width: 540 }} onSubmit={e => { e.preventDefault(); if (refReel || note.trim()) go() }}>
         <b style={{ fontSize: 17 }}>{refReel ? 'Generate similar' : 'New script from a topic'}</b>
-        {refReel && <div className="notebox" style={{ gap: 4 }}><b style={{ color: 'var(--c-tint)' }}>{refReel.hook_en || refReel.shortcode}</b><span className="caption">@{refReel.clinic} · {refReel.format} · {fmt.pct(refReel.like_rate)} like-rate · {fmt.n(refReel.views)} views</span></div>}
+        {refReel && <div className="notebox" style={{ gap: 4 }}><b style={{ color: 'var(--c-tint)' }}>{refReel.hook_en || refReel.shortcode}</b><span className="caption">{nameOf(refReel.clinic)} · {refReel.format} · {fmt.pct(refReel.like_rate)} like-rate · {fmt.n(refReel.views)} views</span></div>}
         <div className="grid2" style={{ gap: 12 }}>
           <label className="formrow"><span>In the voice of</span><div className="field"><select value={person} onChange={e => setPerson(e.target.value)}>{c.people.map(p => <option key={p.id} value={p.id}>{p.name}{p.lead ? ' ★' : ''}</option>)}<option value="">The clinic (no one person)</option></select></div></label>
           <label className="formrow"><span>Language</span><div className="field"><select value={language} onChange={e => setLanguage(e.target.value)}>{langs.map(l => <option key={l} value={l}>{LANGS[l] || l}</option>)}</select></div></label>
@@ -734,6 +752,7 @@ function ScriptDetail({ c, sid, onChange, onGone }: { c: ClientDoc; sid: number;
 }
 
 function RefCard({ r, borrowed }: { r: NonNullable<Script['ref']>; borrowed?: string }) {
+  const nameOf = useName()
   const [watch, setWatch] = useState(false)
   if (r.missing) return <div className="refreel"><div className="caption" style={{ fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' }}>Reference reel</div><span className="sub">This reel isn't in this Mac's index any more.</span><a href={r.url} target="_blank" rel="noreferrer" className="caption" style={{ fontWeight: 600 }}>Open on Instagram {I.ext({ width: 10, height: 10 })}</a></div>
   return (
@@ -743,7 +762,7 @@ function RefCard({ r, borrowed }: { r: NonNullable<Script['ref']>; borrowed?: st
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="caption" style={{ fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' }}>Reference reel</div>
           <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--c-tint)', lineHeight: 1.35 }}>{r.hook_en || r.hook_original || r.shortcode}</div>
-          <div className="caption" style={{ color: 'var(--c-sub)' }}>{[`@${r.clinic}`, r.format, r.hook_type, langName(r.language), r.duration ? fmt.dur(r.duration) : null, r.date ? fmt.date(r.date) : null].filter(Boolean).join(' · ')}</div>
+          <div className="caption" style={{ color: 'var(--c-sub)' }}>{[nameOf(r.clinic), r.format, r.hook_type, langName(r.language), r.duration ? fmt.dur(r.duration) : null, r.date ? fmt.date(r.date) : null].filter(Boolean).join(' · ')}</div>
           <div style={{ display: 'flex', gap: 14, fontSize: 12.5, alignItems: 'baseline' }}><b style={{ color: lrColor(r.like_rate) }}>{fmt.pct(r.like_rate)} like-rate</b><span className="sub">{fmt.n(r.views)} views</span><span className="sub">{fmt.n(r.likes)} likes</span></div>
           {r.summary && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>Why it worked:</b> {r.summary}</div>}
           {borrowed && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>What this script takes from it:</b> {borrowed}</div>}
