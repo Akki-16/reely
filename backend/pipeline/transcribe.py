@@ -99,27 +99,67 @@ class WhisperCpp:
         m = self._lang_re.search(log)
         return (m.group(1), round(float(m.group(2)), 2)) if m else (None, 0.0)
 
+    _vad_re = re.compile(r"Reduced audio from (\d+) to (\d+) samples")
+
+    def _pass(self, wav: Path, out: Path, lang: str | None, translate: bool) -> tuple[list, str, dict, float | None]:
+        """One whisper-cli run. Returns (segments, log, raw json, seconds of speech the VAD kept or None)."""
+        cmd = [str(WHISPER_CLI), "-m", str(self.model_path), "-f", str(wav), "-l", lang or "auto", "-t", self.threads,
+               "-oj", "-of", str(out), *self.ARGS]
+        if self.vad_path.exists():
+            cmd += [*self.VAD_ARGS, "-vm", str(self.vad_path)]
+        if translate:
+            cmd.append("-tr")
+        r = subprocess.run(cmd, capture_output=True, timeout=3600)
+        log = (r.stderr or b"").decode("utf-8", "replace") + (r.stdout or b"").decode("utf-8", "replace")
+        if "ggml_metal_init" in log:
+            self.gpu_seen = True
+        if r.returncode != 0 or not out.with_suffix(".json").exists():
+            tail = "\n".join(log.strip().splitlines()[-6:])
+            raise RuntimeError(f"whisper-cli failed ({r.returncode}): {tail}")
+        # whisper.cpp can cut a segment inside a multibyte character, so the file is not always valid UTF-8
+        res = json.loads(out.with_suffix(".json").read_bytes().decode("utf-8", "replace"))
+        m = self._vad_re.search(log)
+        return self._segments(res.get("transcription", [])), log, res, (int(m.group(2)) / 16000 if m else None)
+
+    @staticmethod
+    def _cut(src: Path, dst: Path, start: float):
+        with wave.open(str(src), "rb") as r:
+            r.setpos(min(r.getnframes(), int(start * 16000)))
+            data = r.readframes(r.getnframes())
+        with wave.open(str(dst), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(data)
+
     def run(self, media: Path, translate: bool = False) -> Result:
         with tempfile.TemporaryDirectory(prefix="reely-wcpp-") as tmp:
             wav = Path(tmp) / "audio.wav"; out = Path(tmp) / "out"
             duration = self._to_wav16k(media, wav)
             lang, prob = self._detect(wav)
-            cmd = [str(WHISPER_CLI), "-m", str(self.model_path), "-f", str(wav), "-l", lang or "auto", "-t", self.threads,
-                   "-oj", "-of", str(out), *self.ARGS]
-            if self.vad_path.exists():
-                cmd += [*self.VAD_ARGS, "-vm", str(self.vad_path)]
-            if translate:
-                cmd.append("-tr")
-            r = subprocess.run(cmd, capture_output=True, timeout=3600)
-            log = (r.stderr or b"").decode("utf-8", "replace") + (r.stdout or b"").decode("utf-8", "replace")
-            if "ggml_metal_init" in log:
-                self.gpu_seen = True
-            if r.returncode != 0 or not out.with_suffix(".json").exists():
-                tail = "\n".join(log.strip().splitlines()[-6:])
-                raise RuntimeError(f"whisper-cli failed ({r.returncode}): {tail}")
-            # whisper.cpp can cut a segment inside a multibyte character, so the file is not always valid UTF-8
-            res = json.loads(out.with_suffix(".json").read_bytes().decode("utf-8", "replace"))
-        segs = self._segments(res.get("transcription", []))
+            segs, log, res, speech = self._pass(wav, out, lang, translate)
+            # Whisper sometimes ends a window after its first sentence (often where music comes in under a
+            # voice-over) and skips the rest of the reel. The voice detector knows how much speech there is, so
+            # when far more was heard than was written down, transcribe again from where the text stopped.
+            for attempt in range(8):
+                end = segs[-1]["end"] if segs else 0.0
+                spoken = sum(x["end"] - x["start"] for x in segs)
+                heard = speech if speech is not None else duration
+                if duration - end < 5 or heard - spoken < 4:
+                    break
+                start = end + 0.1 if segs else 1.0 + 4.0 * attempt
+                if start >= duration - 2:
+                    break
+                rest = Path(tmp) / f"rest{attempt}.wav"
+                self._cut(wav, rest, start)
+                more, _, _, heard_rest = self._pass(rest, Path(tmp) / f"out{attempt}", lang, translate)
+                more = [{"start": round(x["start"] + start, 2), "end": round(x["end"] + start, 2), "text": x["text"]} for x in more]
+                if not segs and len(" ".join(x["text"] for x in more)) < 20:
+                    more = []              # a word or two out of music is a guess, not speech
+                if not more:
+                    if segs or heard_rest is not None and heard_rest < 3:
+                        break              # nothing more to find
+                    continue               # nothing at all yet: try a little further in
+                segs += more
+                if speech is not None and heard_rest is not None:
+                    speech = spoken + heard_rest      # what the rest of the reel holds, as heard from this cut
         if not lang:
             lang = (res.get("result") or {}).get("language") or "en"
             m = self._lang_re.search(log)
@@ -214,6 +254,70 @@ def transcribe_all(clinic_dir: Path, size: str, progress=None, should_stop=lambd
             from . import failures as _f; _f.record(clinic_dir, code, "transcribe", str(e) or type(e).__name__)
             if progress: progress(i, len(todo), f"{code} ERROR {e}", langs)
     return {"done": done, "errors": errors, "languages": langs}
+
+
+def stops_early(d: dict) -> bool:
+    """A transcript whose text ends well before the reel does, or that has no text at all on a reel long enough to
+    hold some. Many of these are honest (music after the hook); a re-check finds the ones where speech was missed."""
+    dur = d.get("duration") or 0
+    segs = d.get("segments") or []
+    end = max((x.get("end") or 0) for x in segs) if segs else 0
+    return dur - end > 6 and end < 0.6 * dur
+
+
+def recheck_candidates(clinic_dir: Path) -> list[tuple[Path, dict]]:
+    out = []
+    for tp in sorted((clinic_dir / "transcripts").glob("*.json")):
+        try:
+            d = json.loads(tp.read_text())
+        except Exception:
+            continue
+        if stops_early(d):
+            out.append((tp, d))
+    return out
+
+
+def recheck(clinic_dir: Path, size: str, progress=None, should_stop=lambda: False, engine: str | None = None,
+            codes: list[str] | None = None) -> dict:
+    """Transcribe again the reels whose transcript stops early (or exactly `codes`), keeping the new one only when it
+    holds more. Returns {"checked", "improved": [shortcodes], "no_video", "errors"}."""
+    td = clinic_dir / "transcripts"
+    if codes is not None:
+        todo = []
+        for c in codes:
+            tp = transcript_path(clinic_dir, c)
+            todo.append((Path(tp), json.loads(Path(tp).read_text())) if tp else (None, {"shortcode": c}))
+    else:
+        todo = recheck_candidates(clinic_dir)
+    improved, no_video, errors = [], 0, 0
+    if not todo:
+        return {"checked": 0, "improved": [], "no_video": 0, "errors": 0}
+    eng = get_engine(size, engine)
+    for i, (tp, d) in enumerate(todo, 1):
+        if should_stop():
+            break
+        code = d.get("shortcode")
+        vid = next(iter(sorted((clinic_dir / "videos").glob(f"*{code}*.mp4"))), None)
+        if not vid:
+            no_video += 1
+            if progress: progress(i, len(todo), f"{code} no video on this Mac")
+            continue
+        try:
+            r = eng.run(vid)
+            text = " ".join(x["text"] for x in r.segments)
+            old = d.get("text") or ""
+            if len(text) > len(old) + 15 or (codes is not None and text != old):
+                out = {"shortcode": code, "file": vid.name, "language": r.language, "language_probability": r.language_probability,
+                       "duration": r.duration, "model": eng.size, "engine": eng.id, "segments": r.segments, "text": text}
+                (tp or td / f"{vid.stem}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+                improved.append(code)
+                if progress: progress(i, len(todo), f"{code} fixed: {len(old)} → {len(text)} characters")
+            elif progress:
+                progress(i, len(todo), f"{code} unchanged")
+        except Exception as e:
+            errors += 1
+            if progress: progress(i, len(todo), f"{code} ERROR {e}")
+    return {"checked": len(todo), "improved": improved, "no_video": no_video, "errors": errors}
 
 
 def translate_all(clinic_dir: Path, size: str, progress=None, should_stop=lambda: False, target: str = "en", engine: str | None = None) -> dict:

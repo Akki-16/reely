@@ -327,6 +327,23 @@ export function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }
     return () => clearInterval(t)
   }, [dl?.status, r.shortcode])
   const [tx, setTx] = useState<Tx | null>(null)
+  const [retx, setRetx] = useState<string>('')        // '' | 'running' | a short result to show on the button
+  useEffect(() => { setRetx('') }, [r.shortcode])
+  const retranscribe = async () => {
+    const code = r.shortcode
+    setRetx('running')
+    try {
+      await api.reelRetranscribe(code)
+      for (;;) {
+        await new Promise(res => setTimeout(res, 1500))
+        const s = await api.reelRetranscribeStatus(code)
+        if (s.status === 'running') continue
+        if (s.status === 'error') { setRetx(s.error || 'Failed · try again'); return }
+        if (s.changed) { onReplace(await api.reelOne(code)); load() }
+        setRetx(s.changed ? 'Updated · transcribe again' : 'No more speech found · try again'); return
+      }
+    } catch (e: any) { setRetx(e.message || 'Failed · try again') }
+  }
   const [openT, setOpenT] = useState(true)
   const [openC, setOpenC] = useState(false)
   const [times, setTimes] = useState(() => localStorage.getItem('reely.times') === '1')
@@ -465,10 +482,14 @@ export function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }
               {tx && text && (times && canTimes
                 ? <div className="tlines">{segs.map((sg, i) => <button key={i} className={'tline' + (sg.start < HOOK_SECONDS ? ' hook' : '')} onClick={() => seek(sg.start)} title="Seek"><span className="mono">{fmt.dur(sg.start)}</span><span>{sg.text}</span></button>)}</div>
                 : <div className="ttext">{parts[0] && <span className="mark">{parts[0]}</span>}{parts[1]}</div>)}
-              {tx && text && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button className="btn plain sm" onClick={() => copy('t', segs.length && times && canTimes ? segs.map(sg => `${fmt.dur(sg.start)} ${sg.text}`).join('\n') : text)}>{copied === 't' ? <>{I.check({ width: 11, height: 11 })} Copied</> : <>{I.copy()} Copy</>}</button>
-                  <span className="caption">{times && canTimes ? 'Hook in colour · click a line to seek' : 'Hook in colour'}</span>
+              {tx && (text || (r.video_file && !viewOnly)) && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {text && <button className="btn plain sm" onClick={() => copy('t', segs.length && times && canTimes ? segs.map(sg => `${fmt.dur(sg.start)} ${sg.text}`).join('\n') : text)}>{copied === 't' ? <>{I.check({ width: 11, height: 11 })} Copied</> : <>{I.copy()} Copy</>}</button>}
+                  {text && <span className="caption">{times && canTimes ? 'Hook in colour · click a line to seek' : 'Hook in colour'}</span>}
+                  <span className="spacer" />
+                  {r.video_file && !viewOnly && (retx === 'running'
+                    ? <span className="caption" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="ic spinner" style={{ width: 14, height: 14, flexBasis: 14 }}><span style={{ width: 12, height: 12, borderWidth: 1.5 }} /></span>Transcribing…</span>
+                    : <button className="linkbtn" onClick={retranscribe} title="Listen to the video again and replace this transcript. Use it when speech is missing.">{retx || 'Transcribe again'}</button>)}
                 </div>
               )}
             </div>

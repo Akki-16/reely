@@ -200,52 +200,73 @@ def _execute(run: Run):
     try:
         if s.get("mode") == "refresh":
             return _refresh(run)
-        _acquire(run, "instagram", "scrape")
-        # 1 scrape (skip if index exists and settings say reuse)
-        t0 = run.begin("scrape")
-        idx = run.dir / "reels_index.csv"
-        fresh = idx.exists() and (time.time() - idx.stat().st_mtime) < 24 * 3600
-        if idx.exists() and (s.get("reuse_index") or (fresh and not s.get("rescrape"))):
-            run.skip("scrape", "index already exists" if s.get("reuse_index") else "index scraped in the last 24 h")
+        recheck = s.get("mode") == "recheck"
+        if recheck:
+            # transcripts only: reels whose text stops early are transcribed again; the scrape and videos stay as they are
+            run.skip("scrape", "transcripts only"); run.skip("download", "transcripts only")
         else:
-            reels = scrape.scrape_grid(run.clinic, int(s.get("scroll_pause_ms", 1000)), max_reels=int(s.get("scrape_max", 0) or 0),
-                                       progress=run.progress_for("scrape"), should_stop=run.stage_stop)
-            run.clear_skip()
-            if not reels:
-                raise RuntimeError("no reels collected")
-            summary = index.build_index(run.dir, reels)
-            run.end("scrape", t0, f"{summary['reels']} reels · median {_short(summary['median_views'])}")
-        rows = index.load_index(run.dir)
-        top_n = min(top_n, len(rows)) or top_n
-        importer.write_meta(run.dir, top_n=top_n)
-        db.upsert("clinics", {"handle": run.clinic, "reels_total": len(rows)}, "handle")
-        if run.stop_requested(): raise InterruptedError
+            _acquire(run, "instagram", "scrape")
+            # 1 scrape (skip if index exists and settings say reuse)
+            t0 = run.begin("scrape")
+            idx = run.dir / "reels_index.csv"
+            fresh = idx.exists() and (time.time() - idx.stat().st_mtime) < 24 * 3600
+            if idx.exists() and (s.get("reuse_index") or (fresh and not s.get("rescrape"))):
+                run.skip("scrape", "index already exists" if s.get("reuse_index") else "index scraped in the last 24 h")
+            else:
+                reels = scrape.scrape_grid(run.clinic, int(s.get("scroll_pause_ms", 1000)), max_reels=int(s.get("scrape_max", 0) or 0),
+                                           progress=run.progress_for("scrape"), should_stop=run.stage_stop)
+                run.clear_skip()
+                if not reels:
+                    raise RuntimeError("no reels collected")
+                summary = index.build_index(run.dir, reels)
+                run.end("scrape", t0, f"{summary['reels']} reels · median {_short(summary['median_views'])}")
+            rows = index.load_index(run.dir)
+            top_n = min(top_n, len(rows)) or top_n
+            importer.write_meta(run.dir, top_n=top_n)
+            db.upsert("clinics", {"handle": run.clinic, "reels_total": len(rows)}, "handle")
+            if run.stop_requested(): raise InterruptedError
 
-        # 2 download
-        t0 = run.begin("download")
-        res = download.download_reels(run.dir, rows[:top_n], s.get("video_quality", "low"), None,
-                                      progress=run.progress_for("download"), should_stop=run.stage_stop,
-                                      pace=s.get("download_pace", "balanced"))
-        run.clear_skip()
-        run.stages["download"]["extra"] = res
-        note = f"{res['ok']} new · {res['skipped']} existing · {res['failed']} failed"
-        if res.get("blocked"):
-            # Instagram walled off this network: carry on with the videos already here; the rest wait for a retry
-            note += f" · {res['pending']} left for later (Instagram limit)"
-            run.log(f"— Instagram is limiting downloads from this network; {res['pending']} reels stay pending. "
-                    "Continuing with what is downloaded. Use Download remaining on the clinic later, or switch network.")
-        importer.write_meta(run.dir, download_pending=res["pending"] if res.get("blocked") else 0)
-        run.end("download", t0, note)
-        _release(run, "instagram")
-        if run.stop_requested(): raise InterruptedError
+            # 2 download
+            t0 = run.begin("download")
+            res = download.download_reels(run.dir, rows[:top_n], s.get("video_quality", "low"), None,
+                                          progress=run.progress_for("download"), should_stop=run.stage_stop,
+                                          pace=s.get("download_pace", "balanced"))
+            run.clear_skip()
+            run.stages["download"]["extra"] = res
+            note = f"{res['ok']} new · {res['skipped']} existing · {res['failed']} failed"
+            if res.get("blocked"):
+                # Instagram walled off this network: carry on with the videos already here; the rest wait for a retry
+                note += f" · {res['pending']} left for later (Instagram limit)"
+                run.log(f"— Instagram is limiting downloads from this network; {res['pending']} reels stay pending. "
+                        "Continuing with what is downloaded. Use Download remaining on the clinic later, or switch network.")
+            importer.write_meta(run.dir, download_pending=res["pending"] if res.get("blocked") else 0)
+            run.end("download", t0, note)
+            _release(run, "instagram")
+            if run.stop_requested(): raise InterruptedError
 
         # 3 transcribe
         _acquire(run, "gpu", "transcribe")
         t0 = run.begin("transcribe")
-        res = transcribe.transcribe_all(run.dir, s.get("whisper_model", "medium"), engine=s.get("whisper_engine"),
-                                        progress=run.progress_for("transcribe"), should_stop=run.stage_stop)
-        run.clear_skip()
-        run.end("transcribe", t0, f"{res['done']} transcribed · {res['errors']} errors")
+        if recheck:
+            res = transcribe.recheck(run.dir, s.get("whisper_model", "medium"), engine=s.get("whisper_engine"),
+                                     progress=run.progress_for("transcribe"), should_stop=run.stage_stop)
+            run.clear_skip()
+            # a reel whose transcript grew is annotated again, unless you edited its labels or notes yourself
+            ap = run.dir / "annotations.json"
+            if res["improved"] and ap.exists():
+                ann = json.loads(ap.read_text())
+                mine = {r["shortcode"] for r in db.rows("SELECT shortcode FROM reels WHERE clinic=? AND edited=1", (run.clinic,))}
+                for code in res["improved"]:
+                    if code not in mine:
+                        ann.pop(code, None)
+                ap.write_text(json.dumps(ann, ensure_ascii=False, indent=1))
+            run.end("transcribe", t0, f"{len(res['improved'])} of {res['checked']} short transcripts had more speech"
+                    + (f" · {res['no_video']} without a video here" if res["no_video"] else "") + (f" · {res['errors']} errors" if res["errors"] else ""))
+        else:
+            res = transcribe.transcribe_all(run.dir, s.get("whisper_model", "medium"), engine=s.get("whisper_engine"),
+                                            progress=run.progress_for("transcribe"), should_stop=run.stage_stop)
+            run.clear_skip()
+            run.end("transcribe", t0, f"{res['done']} transcribed · {res['errors']} errors")
         if run.stop_requested(): raise InterruptedError
 
         # 4 translate

@@ -33,7 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from config import VIEW_ONLY, VIEW_ONLY_MSG  # noqa: E402
 
 # Work that needs the scraping browser, yt-dlp or a speech model; refused by the view-only (Intel) build.
-_WORK = re.compile(r"^/api/(clinics(/[^/]+/(run|more|retry|refresh|translate))?|queue|reels/[^/]+/translate"
+_WORK = re.compile(r"^/api/(clinics(/[^/]+/(run|more|retry|refresh|recheck|translate))?|queue|reels/[^/]+/(translate|retranscribe)"
                    r"|models/[^/]+/download|browser/(login|install))$")
 
 
@@ -353,6 +353,64 @@ def clinic_refresh(handle: str):
     if not (DATA_ROOT / handle / "reels_index.csv").exists():
         raise HTTPException(409, "this clinic has not been scraped yet")
     return {"run_id": jobs.start(handle, {"mode": "refresh"})}
+
+
+# ---------- transcripts that stop early ----------
+@app.get("/api/clinics/{handle}/recheck")
+def clinic_recheck_count(handle: str):
+    from pipeline import transcribe
+    d = DATA_ROOT / handle
+    cands = transcribe.recheck_candidates(d) if (d / "transcripts").is_dir() else []
+    with_video = sum(1 for _, t in cands if any((d / "videos").glob(f"*{t.get('shortcode')}*.mp4")))
+    return {"count": len(cands), "with_video": with_video}
+
+
+@app.post("/api/clinics/{handle}/recheck")
+def clinic_recheck(handle: str):
+    if jobs.active_for(handle):
+        raise HTTPException(409, "a run is already active for this clinic")
+    if not (DATA_ROOT / handle / "transcripts").is_dir():
+        raise HTTPException(409, "this account has no transcripts yet")
+    return {"run_id": jobs.start(handle, {"mode": "recheck"})}
+
+
+_retx_jobs: dict = {}
+
+
+@app.post("/api/reels/{shortcode}/retranscribe")
+def reel_retranscribe(shortcode: str):
+    """Transcribe one reel again from its video, replacing the transcript (and its translation)."""
+    r = db.one("SELECT clinic FROM reels WHERE shortcode=?", (shortcode,))
+    if not r: raise HTTPException(404)
+    if _retx_jobs.get(shortcode, {}).get("status") == "running":
+        return _retx_jobs[shortcode]
+    d = DATA_ROOT / r["clinic"]
+    if not any((d / "videos").glob(f"*{shortcode}*.mp4")):
+        raise HTTPException(409, "This reel's video isn't on this Mac. Download it first.")
+    from pipeline import transcribe
+    st = db.get_settings()
+    state = _retx_jobs[shortcode] = {"status": "running", "error": None, "changed": False}
+
+    def work():
+        try:
+            res = transcribe.recheck(d, st.get("whisper_model", "medium"), engine=st.get("whisper_engine"), codes=[shortcode])
+            if res["errors"]:
+                raise RuntimeError("the speech engine failed on this reel")
+            if res["improved"]:
+                if str(st.get("translate", "1")) in ("1", "true", "True"):
+                    try: transcribe.translate_all(d, st.get("whisper_model", "medium"), target=st.get("translate_to", "en"), engine=st.get("whisper_engine"))
+                    except Exception as e: print("retranscribe translate:", e)
+                importer.import_clinic(d)
+            state.update({"status": "done", "changed": bool(res["improved"])})
+        except Exception as e:
+            state.update({"status": "error", "error": str(e).splitlines()[0][:300]})
+    threading.Thread(target=work, daemon=True).start()
+    return state
+
+
+@app.get("/api/reels/{shortcode}/retranscribe")
+def reel_retranscribe_status(shortcode: str):
+    return _retx_jobs.get(shortcode) or {"status": "idle"}
 
 
 @app.get("/api/reels/{shortcode}/history")

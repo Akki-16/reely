@@ -235,6 +235,8 @@ function SpecInput({ value, onChange, options, placeholder, autoFocus, onEnter, 
 function MoreMenu({ c, busy, onStart, onRun, viewOnly, onChange }: { c: Clinic; busy: boolean; onStart: (count: number | null) => void; onRun: (id: number) => void; viewOnly?: boolean; onChange?: () => void }) {
   const [open, setOpen] = useState(false)
   const [custom, setCustom] = useState('')
+  const [short, setShort] = useState<{ count: number; with_video: number } | null>(null)
+  useEffect(() => { if (open && !viewOnly) api.recheckCount(c.handle).then(setShort).catch(() => {}) }, [open])
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -273,6 +275,7 @@ function MoreMenu({ c, busy, onStart, onRun, viewOnly, onChange }: { c: Clinic; 
           {!viewOnly && (c.pending || 0) > 0 && <button className="row" title="Reels a download stage left for later because Instagram was limiting this network" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Download remaining</span><span className="caption">{c.pending}</span></button>}
           {!viewOnly && (c.failed || 0) > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.retry(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }}><span>Retry failed</span><span className="caption">{c.failed}</span></button>}
           {!viewOnly && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.refreshStats(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Re-scrape view counts and re-fetch likes; no videos are downloaded"><span>Refresh stats</span><span className="caption">views + likes</span></button>}
+          {!viewOnly && short && short.with_video > 0 && <button className="row" onClick={async () => { setOpen(false); try { const r = await api.recheck(c.handle); onRun(r.run_id) } catch (e: any) { alert(e.message) } }} title="Listens again to reels whose transcript ends well before the video does. Where more speech is found, the transcript is replaced and the reel is annotated again. Reels you edited keep your labels."><span>Re-check transcripts</span><span className="caption">{short.with_video} stop early</span></button>}
         </div>
       )}
     </div>
