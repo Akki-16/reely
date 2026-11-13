@@ -513,7 +513,6 @@ textarea.inline { width: 100%; border: 1px solid var(--c-tint); border-radius: 8
 .catchip:hover { border-color: var(--c-tint); } .catchip.on { background: var(--c-tint-soft); border-color: var(--c-tint); }
 .catreel { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--c-hair); cursor: pointer; transition: background .15s; }
 .catreel:last-child { border-bottom: 0; } .catreel:hover { background: var(--c-fill); } .catreel.on { background: var(--c-tint-soft); }
-.catplay { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: #1D1D1F; color: #fff; display: flex; align-items: center; justify-content: center; }
 .combohead { padding: 11px 18px; border-bottom: 1px solid var(--c-hair); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .catgridwrap { padding: 16px 18px 12px; overflow-x: auto; }
 .catgrid { display: grid; gap: 8px; align-items: center; min-width: min-content; }

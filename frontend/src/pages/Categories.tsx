@@ -108,7 +108,6 @@ export default function Categories() {
       {reels?.map(r => (
         <div key={r.shortcode} className={'catreel' + (open?.shortcode === r.shortcode && card ? ' on' : '')} style={{ padding: pad }} onClick={() => openReel(r)}>
           {picking && <input type="checkbox" className="rowcheck" checked={picked.has(r.shortcode)} onClick={e => e.stopPropagation()} onChange={() => setPicked(p => { const n = new Set(p); n.has(r.shortcode) ? n.delete(r.shortcode) : n.add(r.shortcode); return n })} aria-label="Select this reel" />}
-          <span className="catplay" aria-hidden>{I.play({ width: 10, height: 10 })}</span>
           <b style={{ width: 52, color: lrColor(r.like_rate) }}>{pct(r.like_rate)}</b>
           <div className="fill" style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hook_en || r.hook_original || r.shortcode}</div>
