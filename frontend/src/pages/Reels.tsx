@@ -1,4 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 import { ClinicPicker, SpecialityPicker, Toolbar, Ui } from '../App'
 import { api, fmt, isTauri, langName, LANGS, lrColor, url } from '../api'
@@ -40,7 +41,7 @@ const DEFAULT_COLS = ['like_rate', 'views', 'hook_en', 'hook_type', 'format', 'f
 
 export default function Reels() {
   const { handle: hParam } = useParams()
-  const { spec, clinics, toast, viewOnly } = useContext(Ui)
+  const { spec, clinics, toast, viewOnly, sideOpen } = useContext(Ui)
   // hook library: which reels are saved, and the ones ticked for a bulk send
   const [lib, setLib] = useState<Set<string>>(new Set())
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -65,8 +66,8 @@ export default function Reels() {
   const [saved, setSaved] = useState<string | null>(null)
   const [data, setData] = useState<{ reels: Reel[]; facets: Record<string, string[]>; total: number } | null>(null)
   const [sel, setSel] = useState<Reel | null>(null)
-  const [card, setCard] = useState<'open' | 'closing' | null>(null)   // table view: the slide-in reel card
-  const closeCard = () => { setCard('closing'); setTimeout(() => setCard(c => c === 'closing' ? null : c), 240) }
+  const [card, setCard] = useState<'open' | 'closing' | null>(null)   // table view: the reel panel on the right edge
+  const closeCard = () => { setCard('closing'); setTimeout(() => setCard(c => c === 'closing' ? null : c), 230) }
   const [sort, setSort] = useState('like_rate')
   const [minLR, setMinLR] = useState('')
   const [f, setF] = useState<Record<string, string>>({})
@@ -213,27 +214,52 @@ export default function Reels() {
             {data?.reels.length === 0 && <div className="empty">No reels match.</div>}
           </div>
         )}
-        {view === 'table' && card && sel && (() => {
-          const list = data?.reels || []
-          const i = list.findIndex(x => x.shortcode === sel.shortcode)
-          const go = (d: number) => { const n = list[i + d]; if (n) setSel(n) }
-          return (
-            <div className={'slidecard' + (card === 'closing' ? ' out' : '')} onKeyDown={e => { if (e.key === 'Escape') closeCard(); if (e.key === 'ArrowDown') go(1); if (e.key === 'ArrowUp') go(-1) }} tabIndex={-1}>
-              <Inspector r={sel} onEdit={update} target={target} inLib={lib.has(sel.shortcode)} onLib={() => lib.has(sel.shortcode) ? removeFromLibrary(sel.shortcode) : sendToLibrary([sel.shortcode])}
-                onReplace={nr => { setData(d => d && { ...d, reels: d.reels.map(x => x.shortcode === nr.shortcode ? nr : x) }); setSel(s => s?.shortcode === nr.shortcode ? nr : s) }}
-                header={<div className="cardnav">
-                  <button className="iconbtn" aria-label="Previous reel" disabled={i <= 0} onClick={() => go(-1)}>{I.back({ width: 13, height: 13 })}</button>
-                  <button className="iconbtn" aria-label="Next reel" disabled={i < 0 || i >= list.length - 1} onClick={() => go(1)}>{I.fwd({ width: 13, height: 13 })}</button>
-                  <span className="caption">{i + 1} of {list.length}</span>
-                  <span className="spacer" />
-                  <button className="iconbtn" aria-label="Close card" onClick={closeCard}>✕</button>
-                </div>} />
-            </div>
-          )
-        })()}
+        {view === 'table' && card && sel && <ReelPanel list={data?.reels || []} sel={sel} setSel={setSel} closing={card === 'closing'} onClose={closeCard} withSide={sideOpen}>
+          {(header) => <Inspector r={sel} onEdit={update} target={target} inLib={lib.has(sel.shortcode)} onLib={() => lib.has(sel.shortcode) ? removeFromLibrary(sel.shortcode) : sendToLibrary([sel.shortcode])}
+            onReplace={nr => { setData(d => d && { ...d, reels: d.reels.map(x => x.shortcode === nr.shortcode ? nr : x) }); setSel(s => s?.shortcode === nr.shortcode ? nr : s) }} header={header} />}
+        </ReelPanel>}
       </div></div>
     </>
   )
+}
+
+/** Table view: the reel opens in a full-height panel on the right edge over a dimmed page. ← → step through reels,
+ *  Esc, the scrim or ✕ close it. Rendered on document.body because .main-inner animates, which breaks position: fixed. */
+function ReelPanel({ list, sel, setSel, closing, onClose, withSide, children }: { list: Reel[]; sel: Reel; setSel: (r: Reel) => void; closing: boolean; onClose: () => void; withSide: boolean; children: (header: React.ReactNode) => React.ReactNode }) {
+  const i = list.findIndex(x => x.shortcode === sel.shortcode)
+  const go = (d: number) => { const n = list[i + d]; if (n) setSel(n) }
+  const goRef = useRef(go); goRef.current = go
+  const closeRef = useRef(onClose); closeRef.current = onClose
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t && (['INPUT', 'TEXTAREA', 'SELECT', 'VIDEO', 'AUDIO'].includes(t.tagName) || t.isContentEditable)) return
+      if (document.querySelector('.sheet-back')) return          // a sheet on top handles its own keys
+      if (e.key === 'Escape') { e.preventDefault(); closeRef.current() }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goRef.current(1) }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); goRef.current(-1) }
+    }
+    document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k)
+  }, [])
+  // keep the row in view as the panel steps through reels
+  useEffect(() => { document.querySelector('.tbl tr.on')?.scrollIntoView({ block: 'nearest' }) }, [sel.shortcode])
+  const header = (
+    <div className="reelpanel-head" data-tauri-drag-region>
+      <button className="iconbtn" aria-label="Previous reel" disabled={i <= 0} onClick={() => go(-1)}>{I.back({ width: 13, height: 13 })}</button>
+      <button className="iconbtn" aria-label="Next reel" disabled={i < 0 || i >= list.length - 1} onClick={() => go(1)}>{I.fwd({ width: 13, height: 13 })}</button>
+      <span className="caption" style={{ color: 'var(--c-sub)', fontSize: 12.5 }}>{i + 1} of {list.length}</span>
+      <span className="spacer" data-tauri-drag-region />
+      <span className="caption hint">← → to move · Esc to close</span>
+      <button className="iconbtn" aria-label="Close" onClick={onClose}>✕</button>
+    </div>
+  )
+  return createPortal(
+    <>
+      <div className={'reelscrim' + (withSide ? ' withside' : '') + (closing ? ' out' : '')} onMouseDown={onClose} aria-hidden />
+      <div className={'reelpanel' + (closing ? ' out' : '')} role="dialog" aria-label="Reel">
+        {children(header)}
+      </div>
+    </>, document.body)
 }
 
 function ColumnChooser({ cols, setCols, onClose }: { cols: string[]; setCols: (c: string[]) => void; onClose: () => void }) {

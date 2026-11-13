@@ -280,13 +280,21 @@ textarea.inline { width: 100%; border: 1px solid var(--c-tint); border-radius: 8
 @media (max-width: 1100px) { .hcells { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hgrid { grid-template-columns: 1fr; } }
 
 /* reels table: the reel card slides in from the right */
-.slidecard { position: fixed; top: 64px; right: 16px; bottom: 16px; width: 400px; z-index: 25; display: flex; animation: slide-in .32s var(--ease) both; outline: none; }
-.slidecard.out { animation: slide-out .24s var(--ease) both; }
-.slidecard .inspector { flex: 1; overflow: auto; box-shadow: 0 2px 4px rgba(0,0,0,.06), 0 18px 48px rgba(0,0,0,.2); }
-.cardnav { display: flex; align-items: center; gap: 6px; margin: -4px -4px -6px; }
-.cardnav .iconbtn { background: var(--c-fill); } .cardnav .iconbtn:disabled { opacity: .4; cursor: default; }
-@keyframes slide-in { from { transform: translateX(calc(100% + 24px)); opacity: .4; } to { transform: none; opacity: 1; } }
-@keyframes slide-out { from { transform: none; opacity: 1; } to { transform: translateX(calc(100% + 24px)); opacity: 0; } }
+/* table view: the reel panel attached to the right edge, over a dimmed page */
+.reelscrim { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 90; background: rgba(0,0,0,.22); animation: fade .25s var(--ease) both; }
+.reelscrim.withside { left: 220px; }
+.reelscrim.out { animation: fade-out .23s var(--ease) both; }
+.reelpanel { position: fixed; top: 0; right: 0; bottom: 0; width: 470px; max-width: calc(100vw - 40px); z-index: 91; display: flex; flex-direction: column; background: var(--c-card); border-left: 1px solid var(--c-hair); box-shadow: -18px 0 50px rgba(0,0,0,.22); animation: panel-in .25s var(--ease) both; }
+.reelpanel.out { animation: panel-out .23s var(--ease) both; }
+.reelpanel .inspector { flex: 1; min-height: 0; overflow: auto; border-radius: 0; box-shadow: none; background: transparent; padding: 0 20px 20px; }
+.reelpanel-head { position: sticky; top: 0; z-index: 2; height: 52px; flex: 0 0 52px; display: flex; align-items: center; gap: 8px; margin: 0 -20px; padding: 0 16px; border-bottom: 1px solid var(--c-hair); background: var(--c-card); }
+.reelpanel-head .iconbtn { background: var(--c-fill); } .reelpanel-head .iconbtn:disabled { opacity: .4; cursor: default; }
+.reelpanel-head .hint { white-space: nowrap; }
+@media (max-width: 900px) { .reelscrim.withside { left: 0; } }
+@media (max-width: 620px) { .reelpanel-head .hint { display: none; } }
+@keyframes panel-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes panel-out { from { transform: none; } to { transform: translateX(100%); } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 
 /* chat */
 .bubble { max-width: 85%; border-radius: 14px; padding: 10px 14px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; }

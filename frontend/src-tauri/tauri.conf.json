@@ -46,7 +46,8 @@
       "../../build/dist-view/reely-backend": "backend/reely-backend-view"
     },
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
     },
     "createUpdaterArtifacts": true
   },
