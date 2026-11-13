@@ -513,14 +513,17 @@ def report_generate(body: ReportBody):
 
 # ---------- export / import between Macs ----------
 class ExportBody(BaseModel):
-    handles: list[str]
+    handles: list[str] = []
     include: dict = {}
+    clients: list[int] = []
+    ref_mode: str = "reels"     # reels: bring the reels clients' scripts use when their account isn't exported | none
 
 
 class ImportBody(BaseModel):
     path: str
     handles: list[str] | None = None
     mode: str = "merge"
+    clients: list[str] | None = None
 
 
 @app.get("/api/transfer/estimate")
@@ -529,11 +532,17 @@ def transfer_estimate(handles: str = ""):
     return transfer.estimate([h for h in handles.split(",") if h])
 
 
+@app.get("/api/transfer/estimate-clients")
+def transfer_estimate_clients(ids: str = ""):
+    import client_transfer
+    return client_transfer.estimate([int(x) for x in ids.split(",") if x.strip().isdigit()])
+
+
 @app.post("/api/transfer/export")
 def transfer_export(body: ExportBody):
     import transfer
     try:
-        return transfer.start_export(body.handles, body.include)
+        return transfer.start_export(body.handles, body.include, body.clients, body.ref_mode)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(409, str(e))
 
@@ -551,7 +560,7 @@ def transfer_inspect(body: ImportBody):
 def transfer_import(body: ImportBody):
     import transfer
     try:
-        return transfer.start_import(body.path, body.handles, body.mode)
+        return transfer.start_import(body.path, body.handles, body.mode, body.clients)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         raise HTTPException(409, str(e))
 

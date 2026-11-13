@@ -7,6 +7,7 @@ import type { Branch, Brief, ClientDoc, Person, Plan, Reel, Script, ScriptData, 
 import { I } from '../icons'
 import { Avatar, SCRIPT_LANGS } from './Clients'
 import PlanTab from './PlanTab'
+import { ExportSheet } from './Transfer'
 import { ReviewShare, Teleprompter } from './ScriptTools'
 
 const PEOPLE_COLORS = ['linear-gradient(180deg,#C4B5FD,#7C3AED)', 'linear-gradient(180deg,#7DD3FC,#0284C7)', 'linear-gradient(180deg,#86EFAC,#16A34A)', 'linear-gradient(180deg,#FDBA74,#EA580C)', 'linear-gradient(180deg,#F9A8D4,#DB2777)']
@@ -26,6 +27,7 @@ export default function ClientRoom() {
   const [refs, setRefs] = useState<Ref[]>([])
   const [scripts, setScripts] = useState<Script[]>([])
   const [gen, setGen] = useState<{ ref: Ref | null } | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const load = () => api.client(id).then(setC).catch(e => setErr(e.message))
   const loadRefs = () => api.clientRefs(id).then(setRefs).catch(() => {})
@@ -64,7 +66,7 @@ export default function ClientRoom() {
             <div className="sub">{meta || 'Add the speciality, people and branches below'}</div>
           </div>
           {c.brief && <button className="btn plain sm" onClick={async () => { try { const r = await api.briefPdf(id); toast(r.pdf ? `Saved ${r.path.split('/').pop()} to Downloads` : r.note || 'Saved') } catch (e: any) { toast(e.message) } }}>{I.pdf()} Share brief</button>}
-          <ClientMenu c={c} onRename={name => save({ name })} onDelete={async () => { await api.clientDelete(id); nav('/clients') }} />
+          <ClientMenu c={c} onRename={name => save({ name })} onExport={() => setExporting(true)} onDelete={async () => { await api.clientDelete(id); nav('/clients') }} />
         </div>
         <div className="roomtabs" role="tablist">
           <button role="tab" className={tab === 'context' || tab === 'brief' ? 'on' : ''} onClick={() => go(ctxTab)}>Context</button>
@@ -90,6 +92,7 @@ export default function ClientRoom() {
         {tab === 'plan' && <PlanTab c={c} onScripts={loadScripts} />}
         {tab === 'scripts' && <ScriptsView c={c} scripts={scripts} sid={sid ? Number(sid) : null} reload={loadScripts} onNew={() => setGen({ ref: null })} />}
       </div></div>
+      {exporting && <ExportSheet client={c.id} onClose={() => setExporting(false)} />}
       {gen && <GenerateSheet c={c} refReel={gen.ref} onClose={() => setGen(null)} onMade={async sid => { setGen(null); await loadScripts(); loadRefs(); nav(`/clients/${id}/scripts/${sid}`) }} />}
     </>
   )
@@ -103,7 +106,7 @@ function JobLine({ c }: { c: ClientDoc }) {
   return null
 }
 
-function ClientMenu({ c, onRename, onDelete }: { c: ClientDoc; onRename: (n: string) => void; onDelete: () => void }) {
+function ClientMenu({ c, onRename, onExport, onDelete }: { c: ClientDoc; onRename: (n: string) => void; onExport: () => void; onDelete: () => void }) {
   const { words } = useContext(Ui)
   const [open, setOpen] = useState(false)
   const ref = useOutside(open, () => setOpen(false))
@@ -112,6 +115,7 @@ function ClientMenu({ c, onRename, onDelete }: { c: ClientDoc; onRename: (n: str
       <button className={'btn plain sm' + (open ? ' on' : '')} onClick={() => setOpen(v => !v)} aria-label="More">•••</button>
       {open && <div className="card menu" style={{ width: 240 }}>
         <button className="row" onClick={() => { setOpen(false); const n = window.prompt(`Rename ${words.one.toLowerCase()}`, c.name); if (n && n.trim()) onRename(n.trim()) }}>Rename…</button>
+        <button className="row" onClick={() => { setOpen(false); onExport() }}>Export this {words.one.toLowerCase()}…</button>
         <div style={{ borderTop: '1px solid var(--c-hair)', margin: '4px 0' }} />
         <HoldButton label={`Delete ${words.one.toLowerCase()}`} ms={2500} onHold={onDelete} className="row" style={{ width: '100%', justifyContent: 'flex-start' }} />
         <div className="caption" style={{ padding: '2px 8px 6px' }}>Removes its brief, references and scripts. The reels themselves stay.</div>
@@ -735,7 +739,7 @@ function RefCard({ r, borrowed }: { r: NonNullable<Script['ref']>; borrowed?: st
   return (
     <div className="refreel">
       <div style={{ display: 'flex', gap: 14 }}>
-        {watch && r.video_file && <video className="refvideo" src={url(`/api/video/${r.clinic}/${encodeURIComponent(r.video_file)}`)} controls autoPlay playsInline />}
+        {watch && r.video_url && <video className="refvideo" src={url(r.video_url)} controls autoPlay playsInline />}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="caption" style={{ fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' }}>Reference reel</div>
           <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--c-tint)', lineHeight: 1.35 }}>{r.hook_en || r.hook_original || r.shortcode}</div>
@@ -744,9 +748,9 @@ function RefCard({ r, borrowed }: { r: NonNullable<Script['ref']>; borrowed?: st
           {r.summary && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>Why it worked:</b> {r.summary}</div>}
           {borrowed && <div className="sub" style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: 'var(--c-ink)', fontWeight: 600 }}>What this script takes from it:</b> {borrowed}</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
-            {r.video_file && <button className={'btn plain sm' + (watch ? ' on' : '')} onClick={() => setWatch(!watch)}>{I.play({ width: 10, height: 10 })} {watch ? 'Hide video' : 'Watch'}</button>}
+            {r.video_url && <button className={'btn plain sm' + (watch ? ' on' : '')} onClick={() => setWatch(!watch)}>{I.play({ width: 10, height: 10 })} {watch ? 'Hide video' : 'Watch'}</button>}
             <a href={r.url} target="_blank" rel="noreferrer" className="btn plain sm">Instagram {I.ext({ width: 10, height: 10 })}</a>
-            <Link to={`/reels/${r.clinic}`} className="btn plain sm">Open in Reels</Link>
+            {!r.imported_ref && <Link to={`/reels/${r.clinic}`} className="btn plain sm">Open in Reels</Link>}
           </div>
         </div>
       </div>

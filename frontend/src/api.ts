@@ -48,7 +48,8 @@ export type Pattern = { id: string; name: string; description?: string; hook_sty
 export type PlanItem = { id: string; topic: string; angle?: string; pattern_id?: string; pattern?: string; language: string; person_id?: string | null; on_camera?: string; refs?: string[]; why?: string; ok?: boolean; warn?: string; tick?: boolean; script_id?: number | null; script_status?: string; script_title?: string }
 export type Plan = { id: number; client_id: number; month: string; count: number; status: string; note?: string; error?: string | null; items: PlanItem[]; settings: { mix?: Record<string, number>; cast?: string; note?: string }; created_at: string }
 export type Script = { id: number; client_id: number; plan_id?: number | null; pattern?: string; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number; ref?: RefReel | null }
-export type RefReel = { shortcode: string; clinic?: string; url: string; hook_en?: string; hook_original?: string; format?: string; hook_type?: string; language?: string; duration?: number; views?: number; likes?: number; like_rate?: number; summary?: string; video_file?: string; date?: string; missing?: boolean }
+export type ClientEstimate = { name: string; speciality: string | null; people: number; branches: number; sources: number; has_brief: boolean; plans: number; scripts: number; core: number; files: number; files_n: number; refs_n: number; ref_accounts: string[]; ref_reels_size: number; ref_videos: number; ref_videos_n: number; ref_by_account: Record<string, { n: number; videos: number; videos_n: number }> }
+export type RefReel = { video_url?: string; imported_ref?: boolean; shortcode: string; clinic?: string; url: string; hook_en?: string; hook_original?: string; format?: string; hook_type?: string; language?: string; duration?: number; views?: number; likes?: number; like_rate?: number; summary?: string; video_file?: string; date?: string; missing?: boolean }
 
 /** Backend origin. Empty in the browser (same origin); set by main.tsx inside the Tauri shell. */
 export let BASE = ''
@@ -100,9 +101,10 @@ export const api = {
   report: (spec: string | null) => j<any>('/api/reports' + (spec ? '?speciality=' + encodeURIComponent(spec) : '')),
   reportGenerate: (spec: string | null) => j<any>('/api/reports', { method: 'POST', body: JSON.stringify({ speciality: spec }) }),
   transferEstimate: (handles: string[]) => j<any>('/api/transfer/estimate?handles=' + encodeURIComponent(handles.join(','))),
-  transferExport: (handles: string[], include: Record<string, boolean>) => j<any>('/api/transfer/export', { method: 'POST', body: JSON.stringify({ handles, include }) }),
+  transferExport: (handles: string[], include: Record<string, boolean>, clients: number[] = [], ref_mode: 'reels' | 'none' = 'reels') => j<any>('/api/transfer/export', { method: 'POST', body: JSON.stringify({ handles, include, clients, ref_mode }) }),
+  transferEstimateClients: (ids: number[]) => j<Record<string, ClientEstimate>>('/api/transfer/estimate-clients?ids=' + ids.join(',')),
   transferInspect: (path: string) => j<any>('/api/transfer/inspect', { method: 'POST', body: JSON.stringify({ path }) }),
-  transferImport: (path: string, handles: string[], mode: string) => j<any>('/api/transfer/import', { method: 'POST', body: JSON.stringify({ path, handles, mode }) }),
+  transferImport: (path: string, handles: string[], mode: string, clients?: string[]) => j<any>('/api/transfer/import', { method: 'POST', body: JSON.stringify({ path, handles, mode, clients }) }),
   transferJob: () => j<any>('/api/transfer/job'),
   reelOne: (code: string) => j<Reel>(`/api/reels/${code}`),
   reelDownload: (code: string) => j<{ status: string; error: string | null }>(`/api/reels/${code}/download`, { method: 'POST' }),

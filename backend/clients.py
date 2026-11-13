@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS scripts (
   title TEXT, options TEXT DEFAULT '{}', data TEXT, error TEXT,
   created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS ref_reels (
+  shortcode TEXT PRIMARY KEY, data TEXT, video_file TEXT, added TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS patterns (
   speciality TEXT PRIMARY KEY, data TEXT, reels INTEGER, made_at TEXT DEFAULT (datetime('now'))
 );
@@ -139,7 +142,7 @@ def _load(cid: int) -> dict:
             "brief": json.loads(r["brief"]) if r["brief"] else None, "brief_meta": json.loads(r["brief_meta"] or "{}")}
 
 
-_DOC_KEYS = ("speciality", "city", "languages", "color", "people", "branches", "sources")
+_DOC_KEYS = ("speciality", "city", "languages", "color", "people", "branches", "sources", "uid")
 
 
 def _save(cid: int, doc: dict):
@@ -589,7 +592,7 @@ def write_script(sid: int):
     try:
         opts = json.loads(s["options"] or "{}")
         doc = _load(s["client_id"])
-        ref = db.one("SELECT r.*, c.speciality FROM reels r LEFT JOIN clinics c ON c.handle=r.clinic WHERE r.shortcode=?", (s["shortcode"],)) if s["shortcode"] else None
+        ref = reel_row(s["shortcode"])
         person = next((p for p in doc["people"] if p["id"] == s["person_id"]), None)
         cast = opts.get("cast") or ""
         ref_txt = "(none: write from the brief and the topic)"
@@ -1025,11 +1028,19 @@ def refs(cid: int):
                    "LEFT JOIN reels r ON r.shortcode=cr.shortcode LEFT JOIN clinics c ON c.handle=r.clinic "
                    "WHERE cr.client_id=? ORDER BY cr.added DESC", (cid,))
     counts = {r["shortcode"]: r["n"] for r in db.rows("SELECT shortcode, COUNT(*) n FROM scripts WHERE client_id=? AND status!='failed' GROUP BY shortcode", (cid,))}
+    out = []
     for r in rows:
-        r["shortcode"] = r.get("shortcode") or r.get("ref_clinic")
+        code = r.get("shortcode") or r.get("ref_clinic")
+        if not r.get("clinic"):
+            # not in the research index: use the copy an imported client brought along, if any
+            x = reel_row(code)
+            if x:
+                r = {**x, "added": r.get("added"), "note": r.get("note")}
+        r["shortcode"] = code
         r["clinic"] = r.get("clinic") or r.get("ref_clinic")
-        r["scripts"] = counts.get(r["shortcode"], 0)
-    return rows
+        r["scripts"] = counts.get(code, 0)
+        out.append(r)
+    return out
 
 
 @router.post("/api/clients/{cid}/refs")
@@ -1092,6 +1103,10 @@ def scripts(cid: int):
         hooks = d.get("hooks") or []
         h = hooks[d.get("hook_pick") or 0] if hooks else {}
         row.update(hook=h.get("english") or h.get("line"), duration_s=d.get("duration_s"), pattern=d.get("pattern") or (row["options"].get("pattern") or {}).get("name"))
+        if row.get("shortcode") and not row.get("ref_clinic"):
+            x = reel_row(row["shortcode"])
+            if x:
+                row.update(ref_clinic=x.get("clinic"), ref_hook=x.get("hook_en"), ref_like_rate=x.get("like_rate"))
         out.append(row)
     return out
 
@@ -1112,13 +1127,50 @@ def script_new(cid: int, body: NewScript):
     return {"id": sid}
 
 
+REF_VIDEOS = ROOT / "_refvideos"
+
+
+def reel_row(code: str | None) -> dict | None:
+    """A reel by shortcode: from the research index, or else from the reference reels that came with an imported client
+    (those are kept apart so they don't show up as research)."""
+    if not code:
+        return None
+    init()
+    r = db.one("SELECT r.*, c.speciality FROM reels r LEFT JOIN clinics c ON c.handle=r.clinic WHERE r.shortcode=?", (code,))
+    if r:
+        if r.get("video_file"):
+            r["video_url"] = f"/api/video/{r['clinic']}/{urllib.parse.quote(r['video_file'])}"
+        return r
+    x = db.one("SELECT data, video_file FROM ref_reels WHERE shortcode=?", (code,))
+    if not x:
+        return None
+    r = json.loads(x["data"] or "{}")
+    r["imported_ref"] = True
+    r["video_file"] = x["video_file"] or None
+    if x["video_file"] and (REF_VIDEOS / x["video_file"]).exists():
+        r["video_url"] = f"/api/refvideo/{urllib.parse.quote(x['video_file'])}"
+    return r
+
+
 def _ref_reel(code: str | None) -> dict | None:
     """The reference reel a script was written from, for the script view and the PDF."""
     if not code:
         return None
-    r = db.one("SELECT r.shortcode, r.clinic, r.url, r.hook_en, r.hook_original, r.format, r.hook_type, r.language, r.duration, "
-               "r.views, r.likes, r.like_rate, r.summary, r.video_file, r.date FROM reels r WHERE r.shortcode=?", (code,))
-    return r or {"shortcode": code, "url": f"https://www.instagram.com/reel/{code}/", "missing": True}
+    r = reel_row(code)
+    if not r:
+        return {"shortcode": code, "url": f"https://www.instagram.com/reel/{code}/", "missing": True}
+    keep = ("shortcode", "clinic", "url", "hook_en", "hook_original", "format", "hook_type", "language", "duration", "views",
+            "likes", "like_rate", "summary", "video_file", "video_url", "date", "imported_ref")
+    return {k: r.get(k) for k in keep}
+
+
+@router.get("/api/refvideo/{file}")
+def refvideo(file: str):
+    from fastapi.responses import FileResponse
+    p = REF_VIDEOS / file
+    if "/" in file or not p.is_file() or p.suffix != ".mp4":
+        raise HTTPException(404)
+    return FileResponse(p, media_type="video/mp4")
 
 
 @router.get("/api/scripts/{sid}")

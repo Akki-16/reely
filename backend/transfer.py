@@ -94,17 +94,36 @@ def _start(kind: str, fn, *args):
 
 
 # ---------- export ----------
-def start_export(handles: list[str], include: dict) -> dict:
+CLIENT_PARTS = ("client_files", "ref_videos")
+
+
+def start_export(handles: list[str], include: dict, clients: list[int] | None = None, ref_mode: str = "reels") -> dict:
     handles = [h for h in dict.fromkeys(handles) if _valid_handle(h) and (DATA_ROOT / h).is_dir()]
-    if not handles:
-        raise ValueError("choose at least one clinic")
-    inc = {p: bool(include.get(p)) for p in PARTS}
-    return _start("export", _export, handles, inc)
+    clients = [int(c) for c in dict.fromkeys(clients or [])]
+    if not handles and not clients:
+        raise ValueError("choose at least one account or client")
+    if ref_mode not in ("reels", "none"):
+        raise ValueError("ref_mode must be reels or none")
+    inc = {p: bool(include.get(p)) for p in (*PARTS, *CLIENT_PARTS)}
+    return _start("export", _export, handles, inc, clients, ref_mode)
 
 
-def _export(handles: list[str], inc: dict) -> dict:
+def _slug(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "-", s).strip("-")[:40] or "client"
+
+
+def _export(handles: list[str], inc: dict, clients: list[int] | None = None, ref_mode: str = "reels") -> dict:
+    import client_transfer
+    clients = clients or []
     stamp = datetime.now().strftime("%Y-%m-%d-%H%M")
-    name = f"Reely-{handles[0]}-{stamp}.reely" if len(handles) == 1 else f"Reely-{len(handles)}-clinics-{stamp}.reely"
+    if not handles and len(clients) == 1:
+        cname = (db.one("SELECT name FROM clients WHERE id=?", (clients[0],)) or {}).get("name") or "client"
+        name = f"Reely-{_slug(cname)}-{stamp}.reely"
+    else:
+        what = [f"{len(handles)}-accounts" if len(handles) != 1 else (handles[0] if handles else "")]
+        if clients:
+            what.append(f"{len(clients)}-client{'s' if len(clients) > 1 else ''}")
+        name = f"Reely-{'-'.join(w for w in what if w)}-{stamp}.reely"
     out_dir = Path.home() / "Downloads"; out_dir.mkdir(exist_ok=True)
     out = out_dir / name
     tmp = out.with_suffix(".partial")
@@ -128,9 +147,11 @@ def _export(handles: list[str], inc: dict) -> dict:
                        "transcripts": len(_part_files(d, "transcripts")) if inc["transcripts"] else 0,
                        "chat": db.one("SELECT COUNT(*) n FROM chat WHERE clinic=?", (h,))["n"] if inc["chat"] else 0},
         })
-    job.update({"total": len(plan), "note": f"packing {len(plan)} files"})
+    job.update({"total": len(plan) + len(clients), "note": f"packing {len(plan)} files"})
     try:
         with zipfile.ZipFile(tmp, "w", allowZip64=True) as z:
+            if clients:
+                manifest.update(client_transfer.pack(z, clients, handles, inc, ref_mode, progress=lambda n: job.update({"note": n})))
             z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1), compress_type=zipfile.ZIP_DEFLATED)
             for h in handles:
                 if inc["chat"]:
@@ -147,7 +168,7 @@ def _export(handles: list[str], inc: dict) -> dict:
             tmp.unlink()
     import subprocess
     subprocess.Popen(["open", "-R", str(out)])
-    return {"path": str(out), "bytes": out.stat().st_size, "clinics": handles}
+    return {"path": str(out), "bytes": out.stat().st_size, "clinics": handles, "clients": [c["name"] for c in manifest.get("clients", [])]}
 
 
 # ---------- import ----------
@@ -179,14 +200,18 @@ def inspect(path: str) -> dict:
         lc = db.one("SELECT reels_total, analysed FROM clinics WHERE handle=?", (h,))
         clinics.append({**c, "exists": local.is_dir() or bool(lc), "local": lc,
                         "files": sum(1 for n in names if n.startswith(f"clinics/{h}/"))})
-    return {"created": m.get("created"), "clinics": clinics, "bytes": size, "path": str(Path(path).expanduser())}
+    import client_transfer
+    with zipfile.ZipFile(Path(path).expanduser()) as z2:
+        cl = client_transfer.inspect(z2, m)
+    return {"created": m.get("created"), "clinics": clinics, "clients": cl, "ref_reels": m.get("ref_reels", 0),
+            "bytes": size, "path": str(Path(path).expanduser())}
 
 
-def start_import(path: str, handles: list[str] | None, mode: str) -> dict:
+def start_import(path: str, handles: list[str] | None, mode: str, clients: list[str] | None = None) -> dict:
     if mode not in ("merge", "replace"):
         raise ValueError("mode must be merge or replace")
     _open(path)[0].close()   # validate before starting
-    return _start("import", _import, path, handles, mode)
+    return _start("import", _import, path, handles, mode, clients)
 
 
 def _safe_rel(name: str, h: str) -> str | None:
@@ -203,11 +228,11 @@ def _safe_rel(name: str, h: str) -> str | None:
     return None
 
 
-def _import(path: str, handles: list[str] | None, mode: str) -> dict:
+def _import(path: str, handles: list[str] | None, mode: str, clients: list[str] | None = None) -> dict:
     z, m = _open(path)
     report = []
     with z:
-        clinics = [c for c in m.get("clinics", []) if _valid_handle(c.get("handle", "")) and (not handles or c["handle"] in handles)]
+        clinics = [c for c in m.get("clinics", []) if _valid_handle(c.get("handle", "")) and (handles is None or c["handle"] in handles)]
         members = {c["handle"]: [n for n in z.namelist() if n.startswith(f"clinics/{c['handle']}/")] for c in clinics}
         total = sum(len(v) for v in members.values())
         job.update({"total": total, "done": 0})
@@ -268,4 +293,8 @@ def _import(path: str, handles: list[str] | None, mode: str) -> dict:
                     cx.execute("UPDATE clinics SET speciality=? WHERE handle=?", (c["speciality"], h))
             report.append({"handle": h, "added": added, "kept": kept})
         job.update({"done": total})
-    return {"clinics": report}
+        client_report = []
+        if m.get("clients") and (clients is None or clients):
+            import client_transfer
+            client_report = client_transfer.import_clients(z, m, clients, mode, progress=lambda n: job.update({"note": n}))
+    return {"clinics": report, "clients": client_report}

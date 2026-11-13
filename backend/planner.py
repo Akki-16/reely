@@ -319,7 +319,7 @@ def plan_generate(pid: int):
         if not it.get("tick") or it.get("script_id"):
             continue
         q = pats.get(it.get("pattern_id")) or {}
-        refs = [r for r in it.get("refs") or [] if db.one("SELECT 1 FROM reels WHERE shortcode=?", (r,))] or (q.get("examples") or [])[:1]
+        refs = [r for r in it.get("refs") or [] if clients.reel_row(r)] or (q.get("examples") or [])[:1]
         opts = {"closeness": "structure", "topic": f"{it.get('topic')}: {it.get('angle') or ''}".strip(": "), "cast": it.get("on_camera") or "",
                 "note": "", "pattern": {k: q.get(k) for k in ("id", "name", "description", "hook_style", "structure", "length_s")} if q else None,
                 "plan_item": it["id"]}

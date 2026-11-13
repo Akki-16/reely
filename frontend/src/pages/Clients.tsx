@@ -4,6 +4,7 @@ import { Toolbar, Ui } from '../App'
 import { api, fmt, LANGS } from '../api'
 import type { ClientSummary } from '../api'
 import { I } from '../icons'
+import { ImportSheet } from './Transfer'
 
 export const SCRIPT_LANGS = ['te', 'hi', 'en', 'ta', 'kn', 'ml', 'mr', 'bn', 'gu']
 
@@ -17,6 +18,7 @@ export default function Clients() {
   const nav = useNavigate()
   const [list, setList] = useState<ClientSummary[] | null>(null)
   const [adding, setAdding] = useState(false)
+  const [importing, setImporting] = useState(false)
   const load = () => api.clients().then(setList).catch(() => setList([]))
   useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t) }, [])
   const shown = (list || []).filter(c => !spec || c.speciality === spec)
@@ -24,6 +26,7 @@ export default function Clients() {
   return (
     <>
       <Toolbar title={words.many}>
+        <button className="btn plain sm" onClick={() => setImporting(true)} title="Bring in clients exported from another Mac">{I.download()} Import</button>
         <button className="btn sm" onClick={() => setAdding(true)}>{I.plus()} New {words.one.toLowerCase()}</button>
       </Toolbar>
       <div className="main"><div className="main-inner">
@@ -64,6 +67,7 @@ export default function Clients() {
           </div>
         )}
       </div></div>
+      {importing && <ImportSheet onClose={() => setImporting(false)} onDone={load} />}
       {adding && <NewClient onClose={() => setAdding(false)} onMade={id => nav(`/clients/${id}`)} />}
     </>
   )
