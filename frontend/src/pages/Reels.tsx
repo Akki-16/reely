@@ -225,7 +225,7 @@ export default function Reels() {
 
 /** Table view: the reel opens in a full-height panel on the right edge over a dimmed page. ← → step through reels,
  *  Esc, the scrim or ✕ close it. Rendered on document.body because .main-inner animates, which breaks position: fixed. */
-function ReelPanel({ list, sel, setSel, closing, onClose, withSide, children }: { list: Reel[]; sel: Reel; setSel: (r: Reel) => void; closing: boolean; onClose: () => void; withSide: boolean; children: (header: React.ReactNode) => React.ReactNode }) {
+export function ReelPanel({ list, sel, setSel, closing, onClose, withSide, children }: { list: Reel[]; sel: Reel; setSel: (r: Reel) => void; closing: boolean; onClose: () => void; withSide: boolean; children: (header: React.ReactNode) => React.ReactNode }) {
   const i = list.findIndex(x => x.shortcode === sel.shortcode)
   const go = (d: number) => { const n = list[i + d]; if (n) setSel(n) }
   const goRef = useRef(go); goRef.current = go
@@ -302,7 +302,7 @@ async function copyText(t: string) {
 
 const HOOK_SECONDS = 5
 
-function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }: { r: Reel; onEdit: (code: string, p: Partial<Reel>) => Promise<void>; target: string; onReplace: (r: Reel) => void; inLib: boolean; onLib: () => void; header?: React.ReactNode }) {
+export function Inspector({ r, onEdit, target, onReplace, inLib, onLib, header }: { r: Reel; onEdit: (code: string, p: Partial<Reel>) => Promise<void>; target: string; onReplace: (r: Reel) => void; inLib: boolean; onLib: () => void; header?: React.ReactNode }) {
   const { clinics: allClinics, viewOnly } = useContext(Ui)
   const imported = allClinics.find(c => c.handle === r.clinic)?.imported
   const [dl, setDl] = useState<{ status: string; error: string | null } | null>(null)

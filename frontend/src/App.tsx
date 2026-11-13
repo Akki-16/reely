@@ -11,6 +11,7 @@ import Models from './pages/Models'
 import HowItWorks from './pages/HowItWorks'
 import Library from './pages/Library'
 import Clients from './pages/Clients'
+import Categories from './pages/Categories'
 import ClientRoom from './pages/ClientRoom'
 import { SidebarUpdate, UpdateCard, UpdaterProvider } from './updater'
 
@@ -102,6 +103,7 @@ export default function App() {
             <NavLink to="/run" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.run()}Run</NavLink>
             <NavLink to="/reels" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.reels()}Reels</NavLink>
             <NavLink to="/insights" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.insights()}Insights</NavLink>
+            <NavLink to="/categories" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.grid()}Categories</NavLink>
             <NavLink to="/library" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.star()}Hook library</NavLink>
             <div className="sec" style={{ paddingTop: 16 }}>Work</div>
             <NavLink to="/clients" className={({ isActive }) => 'nav' + (isActive ? ' on' : '')}>{I.people()}{words.many}</NavLink>
@@ -132,6 +134,7 @@ export default function App() {
             <Route path="/reels/:handle" element={<Reels />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/insights/:handle" element={<Insights />} />
+            <Route path="/categories" element={<Categories />} />
             <Route path="/library" element={<Library />} />
             <Route path="/clients" element={<Clients />} />
             <Route path="/clients/:id" element={<ClientRoom />} />

@@ -7,9 +7,16 @@ import type { ClientSummary } from '../api'
 import { I } from '../icons'
 
 /** "Send to" menu: the hook library, or any client's references. Replaces the old Add to library button. */
-export default function SendTo({ codes, inLib, onLibrary, onDone, align = 'right', label = 'Send to' }: {
-  codes: string[]; inLib?: boolean; onLibrary: () => void | Promise<void>; onDone?: () => void; align?: 'left' | 'right'; label?: string
+export default function SendTo({ codes: given, load, inLib, onLibrary, onDone, align = 'right', label = 'Send to', heading, className = 'btn plain sm' }: {
+  codes: string[]; inLib?: boolean; onLibrary: (codes: string[]) => void | Promise<void>; onDone?: () => void; align?: 'left' | 'right'; label?: string
+  /** For "Send all": fetch the reel codes when the menu opens, so a list of buttons doesn't each load its reels. */
+  load?: () => Promise<string[]>
+  /** A line at the top of the menu saying what is being sent. */
+  heading?: React.ReactNode
+  className?: string
 }) {
+  const [loaded, setLoaded] = useState<string[] | null>(null)
+  const codes = load ? (loaded || []) : given
   const { toast, words, spec } = useContext(Ui)
   const nav = useNavigate()
   const [open, setOpen] = useState(false)
@@ -32,7 +39,8 @@ export default function SendTo({ codes, inLib, onLibrary, onDone, align = 'right
   useEffect(() => {
     if (!open) return
     api.clients().then(setClients).catch(() => {})
-    api.sendCheck(codes).then(setHas).catch(() => {})
+    if (load) { setLoaded(null); setHas({}); load().then(c => { setLoaded(c); api.sendCheck(c).then(setHas).catch(() => {}) }).catch(() => setLoaded([])) }
+    else api.sendCheck(given).then(setHas).catch(() => {})
     const h = (e: MouseEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) close() }
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     const sc = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) close() }
@@ -65,14 +73,16 @@ export default function SendTo({ codes, inLib, onLibrary, onDone, align = 'right
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button ref={btn} className={'btn plain sm' + (open ? ' on' : '')} onClick={() => setOpen(v => !v)} aria-haspopup="menu" aria-expanded={open}
+      <button ref={btn} className={className + (open ? ' on' : '')} onClick={e => { e.stopPropagation(); setOpen(v => !v) }} aria-haspopup="menu" aria-expanded={open}
         title="Send to the hook library or a client">
         {I.send()} {label} {I.down({ width: 10, height: 10 })}
       </button>
       {open && createPortal(
-        <div ref={menuRef} className="card menu sendto" role="menu" style={{ width: 290, color: 'var(--c-ink)', position: 'fixed', right: 'auto', zIndex: 200, transformOrigin: align === 'left' ? 'top left' : 'top right', ...pos }}>
+        <div ref={menuRef} className="card menu sendto" role="menu" onClick={e => e.stopPropagation()} style={{ width: 290, color: 'var(--c-ink)', position: 'fixed', right: 'auto', zIndex: 200, transformOrigin: align === 'left' ? 'top left' : 'top right', ...pos }}>
+          {heading && <div className="caption" style={{ padding: '6px 8px 4px', lineHeight: 1.4 }}>{heading}</div>}
+          {load && !loaded && <div className="caption" style={{ padding: '2px 8px 6px' }}>Counting the reels…</div>}
           {clients.length > 4 && <div className="field" style={{ margin: '2px 2px 4px', height: 28 }}>{I.search()}<input autoFocus placeholder={`Find a ${words.one.toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} /></div>}
-          <button className="row" role="menuitem" onClick={async () => { close(); await onLibrary() }}>
+          <button className="row" role="menuitem" disabled={!codes.length} onClick={async () => { close(); await onLibrary(codes) }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span className="sendic" style={{ background: 'rgba(245,166,35,.16)', color: '#C77C00' }}>{inLib ? I.starFill({ width: 13, height: 13 }) : I.star({ width: 13, height: 13 })}</span>Hook library</span>
             <span className="caption">{inLib ? 'in library · remove' : 'your swipe file'}</span>
           </button>
@@ -82,9 +92,9 @@ export default function SendTo({ codes, inLib, onLibrary, onDone, align = 'right
             {list.map(c => {
               const n = has[String(c.id)] || 0
               return (
-                <button key={c.id} className="row" role="menuitem" onClick={() => sendTo(c)}>
+                <button key={c.id} className="row" role="menuitem" disabled={!codes.length} onClick={() => sendTo(c)}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}><span className="sendic" style={{ background: c.color || 'var(--c-tint)', color: '#fff', fontWeight: 700, fontSize: 11 }}>{c.name.slice(0, 1).toUpperCase()}</span><span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span></span>
-                  <span className="caption" style={n ? { color: 'var(--c-green)', fontWeight: 600 } : undefined}>{n ? (codes.length === 1 ? 'already there' : `${n} of ${codes.length} there`) : (c.speciality || '')}</span>
+                  <span className="caption" style={n ? { color: 'var(--c-green)', fontWeight: 600 } : undefined}>{codes.length > 1 ? (n ? `${codes.length - n} new · ${n} there` : `${codes.length} new`) : n ? 'already there' : (c.speciality || '')}</span>
                 </button>
               )
             })}

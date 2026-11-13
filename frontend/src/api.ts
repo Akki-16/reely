@@ -49,6 +49,10 @@ export type PlanItem = { id: string; topic: string; angle?: string; pattern_id?:
 export type Plan = { id: number; client_id: number; month: string; count: number; status: string; note?: string; error?: string | null; items: PlanItem[]; settings: { mix?: Record<string, number>; cast?: string; note?: string }; created_at: string }
 export type Script = { id: number; client_id: number; plan_id?: number | null; pattern?: string; shortcode: string | null; person_id: string | null; language: string; status: string; title: string; error: string | null; created_at: string; updated_at: string; options: any; data: ScriptData | null; hook?: string; duration_s?: number; ref_hook?: string; ref_clinic?: string; ref_like_rate?: number; ref?: RefReel | null }
 export type ClientEstimate = { name: string; speciality: string | null; people: number; branches: number; sources: number; has_brief: boolean; plans: number; scripts: number; core: number; files: number; files_n: number; refs_n: number; ref_accounts: string[]; ref_reels_size: number; ref_videos: number; ref_videos_n: number; ref_by_account: Record<string, { n: number; videos: number; videos_n: number }> }
+export type CatField = 'format' | 'hook_type' | 'flag' | 'language'
+export type CatGroup = { value: string; n: number; like_rate: number; views: number; accounts: number; best: { hook: string; like_rate: number; clinic: string } }
+export type CatCell = Omit<CatGroup, 'value'> & { a: string; b: string }
+export type Categories = { total: number; median: number | null; a: CatGroup[]; b: CatGroup[]; cells: CatCell[] }
 export type RefReel = { video_url?: string; imported_ref?: boolean; shortcode: string; clinic?: string; url: string; hook_en?: string; hook_original?: string; format?: string; hook_type?: string; language?: string; duration?: number; views?: number; likes?: number; like_rate?: number; summary?: string; video_file?: string; date?: string; missing?: boolean }
 
 /** Backend origin. Empty in the browser (same origin); set by main.tsx inside the Tauri shell. */
@@ -155,6 +159,9 @@ export const api = {
   scriptEdit: (sid: number, data: { data?: ScriptData; status?: string; title?: string }) => j<Script>(`/api/scripts/${sid}`, { method: 'PATCH', body: JSON.stringify(data) }),
   scriptRetry: (sid: number) => j(`/api/scripts/${sid}/retry`, { method: 'POST' }),
   scriptDelete: (sid: number) => j(`/api/scripts/${sid}`, { method: 'DELETE' }),
+  categories: (p: Record<string, string>) => j<Categories>('/api/categories?' + new URLSearchParams(p)),
+  categoryReels: (p: Record<string, string>) => j<{ reels: Reel[] }>('/api/categories/reels?' + new URLSearchParams(p)),
+  categoryRename: (field: string, old: string, name: string, speciality: string | null) => j<{ changed: number; new: string }>('/api/categories/rename', { method: 'POST', body: JSON.stringify({ field, old, new: name, speciality }) }),
   patterns: (speciality: string | null) => j<{ patterns: Pattern[]; reels: number; made_at: string | null; job: { status: string; note?: string; error?: string | null } | null; available: number }>('/api/patterns' + (speciality ? '?speciality=' + encodeURIComponent(speciality) : '')),
   patternsMine: (speciality: string | null) => j('/api/patterns/mine', { method: 'POST', body: JSON.stringify({ speciality }) }),
   plans: (id: number) => j<Plan[]>(`/api/clients/${id}/plans`),
