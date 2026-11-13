@@ -2803,7 +2803,7 @@ dependencies = [
 
 [[package]]
 name = "reely"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "serde",
  "serde_json",
